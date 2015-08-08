@@ -29,7 +29,7 @@ forge:
 
 # What is the goal? What are you trying to do?
 Ok, let's imagine this situation: you want to run Thunderbird or Firefox with a profile inside your mactomb. And since you're on a Mac, you want to do it in a fancy way and easily, painless.
-What the script does for you with the `forge` parameter (including all the optiona parameters) is to:
+What the script does for you with the `forge` command (including all the optional parameters) is to:
 - create an encrypted DMG file
 - copy the Thunderbird/Firefox profile folder
 - creating a bash script that will mount the mactomb and run the app (selecting the profile inside the mactomb if not already done)
