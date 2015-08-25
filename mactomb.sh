@@ -1,6 +1,6 @@
 #!/bin/bash
 ##############################################################################
-#    MacTomb                                                            #
+#    MacTomb                                                                 #
 #    Copyright (C) 2015  Davide `Anathema` Barbato                           #
 #                                                                            #
 #    This program is free software; you can redistribute it and/or modify    #
@@ -96,25 +96,25 @@ resize() {
 
 	echo $new_size
 	echo $st_size
-    
-    if [ $new_size -lt $st_size ]; then
-    	param="-shrinkonly"
-    elif [ $new_size -gt $st_size ]; then
-    	param="-growonly"
-    else
-    	E_MESSAGE="Size is the same. Not resizing"
-    	return 1
-    fi
 
-    ${HDIUTIL} resize -size ${SIZE} ${param} "${FILENAME}"
+	if [ $new_size -lt $st_size ]; then
+		param="-shrinkonly"
+	elif [ $new_size -gt $st_size ]; then
+		param="-growonly"
+	else
+		E_MESSAGE="Size is the same. Not resizing"
+		return 1
+	fi
 
-    if [ "$?" -ne 0 ]; then
-    	E_MESSAGE="Mactomb file '$FILENAME' not resized"
-   		return 1
-    fi
+	${HDIUTIL} resize -size ${SIZE} ${param} "${FILENAME}"
 
-    S_MESSAGE="Mactomb file '$FILENAME' succesfully resized!"
-    return 0
+	if [ "$?" -ne 0 ]; then
+		E_MESSAGE="Mactomb file '$FILENAME' not resized"
+		return 1
+	fi
+
+	S_MESSAGE="Mactomb file '$FILENAME' succesfully resized!"
+	return 0
 }
 
 create() {
@@ -281,7 +281,7 @@ while getopts "a:f:s:p:o:nh" opt; do
 			OUTSCRIPT=$OPTARG;;
 		v)
 			VERBOSE=1;;
-	   \?)
+		\?)
 			e_echo "Invalid option: -$OPTARG" >&2;;
     esac
 done
@@ -295,11 +295,11 @@ $CMD
 ret=$?
 
 if [ "$NOTIFICATION" -eq 1 ]; then
-		if [ "$ret" -eq 0 ]; then
-			osascript -e 'display notification "'"${S_MESSAGE}"'" with title "MacTomb" subtitle "'${CMD}'"'
-		else
-			osascript -e 'display notification "'"${E_MESSAGE}"'" with title "MacTomb" subtitle "'${CMD}'"'
-		fi
+	if [ "$ret" -eq 0 ]; then
+		osascript -e 'display notification "'"${S_MESSAGE}"'" with title "MacTomb" subtitle "'${CMD}'"'
+	else
+		osascript -e 'display notification "'"${E_MESSAGE}"'" with title "MacTomb" subtitle "'${CMD}'"'
+	fi
 else
 	if [ "$ret" -eq 1 ]; then
 		e_echo "${E_MESSAGE}"
