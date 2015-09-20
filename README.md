@@ -1,30 +1,41 @@
 # MacTomb
 MacTomb is a kind of [Tomb](https://github.com/dyne/Tomb) porting for Mac OS X. It allows you to create encrypted DMG file (called `mactomb`), copy files and folders into it and setup a couple of scripts needed to easily mount & run apps that use files stored inside the mactomb.
 
+# What's new? (v.1.0)
+Version 1.0 released! Yes, from 0.1 to 1.0. Why? Big improvements has been made. Read below:
+- there was a conflict between two `-s` options (size and Automator app). Now the Automator app has the `-o` flag and the bash script (that previously was `-o`) becomes `-b`.
+- possibility to call `forge` without automatically fire `create` and `app`. This means: you can use `forge` to create only the Automator app. For a better explaination on `forge`, see the related paragrah
+- you can now specify a command (binary + arguments) with the `-a` flag, that will be outputted in the bash script created with the `-b` flag
+- `-o` ensure the Automator app has .app extension so Mac OS X can recognise it (you don't need to specify it via command line)
+- introduced the `VOLNAME` variable (line 305). By default, the encrypted DMG is labeled `untitled`. You can rename it by changing the value of that variable.
+- the `VOLNAME` variable can be used also inside the `-a` argument to specify an action that has to access file(s) inside the mactomb. As in example, the following line works: `-a /Applications/Firefox.app/Contents/MacOS/firefox-bin \$VOLNAME/index.html` (will tell Firefox to open _/Volumes/$VOLNAME/index.html_). Please note the `\$VOLNAME`: it will be automatically translated to the value of the `VOLNAME` variable defined in the script
+- more robust errors checking
+
 # What exactly it does?
 The help is quite explicit:
 ```
 $ bash mactomb.sh help
-..:: MacTomb v.0.1 ::..
+..:: MacTomb v.1.0 ::..
 by Davide Barbato
 
 Help!
 
 create:
-  -f <file>		    File to create (the mactomb file)
-  -s <size[m|g|t]	Size of the file (m=mb, g=gb, t=tb)
+  -f <file>     File to create (the mactomb file)
+  -s <size[m|g|t]   Size of the file (m=mb, g=gb, t=tb)
   Optional:
-    -p <profile>	Folder/file to copy into the newly created mactomb file <file>
+    -p <profile>    Folder/file to copy into the newly created mactomb file <file>
 
 app:
-  -f <file>	     Encrypted DMG to use as mactomb file
-  -a <app>	     Binary of the app you want to use inside the mactomb file
-  -o <output>	 The bash output script used to launch the <app> inside the mactomb file <file>
+  -f <file> Encrypted DMG to use as mactomb file (already created)
+  -a <app>  Binary and arguments of the app you want to use inside the mactomb file
+  -b <output>   The bash script used to launch the <app> inside the mactomb file <file>
 
 forge:
-  Will call both "create" and "app", so the flags are the same.
+  Will call both "create" and "app" if all flags are specified. Can be called on 
+  already created files, in this case skipping "create" and/or "app"
   Optional:
-    -s <output>	The output Automator script used to launch the bash <output> script by Mac OS X
+    -o <output> The Automator app used to launch the bash <output> script by Mac OS X
 ```
 
 # What is the goal? What are you trying to do?
@@ -37,9 +48,27 @@ What the script does for you with the `forge` command (including all the optiona
 
 In this way with a simple click you can enjoy your app with sensitive data stored inside an encrypted AES256 CBC container, ready to be uploaded on some cloud storage provider to have a backup and portable data backup.
 
-You can drag the Automator script in the Dock and add an icon, so it will looks like a normal app.
+You can drag the Automator app in the Dock and add an icon, so it will looks like a normal app.
 
-## Jiucy stuff
+# The `forge` command
+The `forge` command is most likely the command you want to use or you'll use mostly.
+If you need to create your mactomb from scratch and use an app inside, this command will be your first choice, since it avoids you to call `create` and `app`. Plus, `forge` creates the Automatr app that it's useful if you want to run your bash script (created with `app`) in a Mac OS X way.
+A good use of `forge` is the following:
+```
+$ bash mactomb.sh forge -f ~/mytomb.dmg -s 100m -a "/Applications/Firefox.app/Contents/MacOS/firefox-bin -p test" -b ~/run.sh -o ~/runmy.app
+```
+With the command above we're creating a mactomb file of 100 MB, a bash script (`run.sh`) that will mount the mactomb and will call `/Applications/Firefox.app/Contents/MacOS/firefox-bin -p test`, and the Automator app `runmy.app` that will call `run.sh`. To make a sense of this command, you probably want to create the Firefox profile `test` inside the mactomb, so everytime you run `runmy.app` you'll use Firefox with a profile that runs inside an encrypted container.
+
+Now, what if you have already created a mactomb with `create` or `app` but you need to create the Automator app. The following command will be handy (new in version 1.0):
+```
+$ bash mactomb.sh forge -b ~/run.sh -o ~/runmy.app
+```
+That command can be used even outside the mactomb concept: it can be used to create an Automator app that will call any bash script passed as `-b` argument.
+
+# How to update
+If you have your original folder, move there and type `git pull`. If not, you'd do better to clone the repository or download the zip file.
+
+# Jiucy stuff
 Using the `-n` flag, you can have the final result printed as a Mac OS X notification.
 
 # Technical details

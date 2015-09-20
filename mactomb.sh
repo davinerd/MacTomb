@@ -35,7 +35,7 @@ usage() {
 	echo -e "Usage:"
 	echo -e "${0} <${COMMAND[@]}> -n\n"
 	echo -e "-n\tMac OS X Notification"
-	echo -e "Use 'help' to show a detailed help"
+	echo -e "Use 'help' to show the full help"
 }
 
 help() {
@@ -48,13 +48,13 @@ create:
   Optional:
     -p <profile>\tFolder/file to copy into the newly created mactomb file <file>\n
 app:
-  -f <file>\tEncrypted DMG to use as mactomb file
-  -a <app>\tBinary of the app you want to use inside the mactomb file
-  -o <output>\tThe bash output script used to launch the <app> inside the mactomb file <file>\n
+  -f <file>\tEncrypted DMG to use as mactomb file (already created)
+  -a <app>\tBinary and arguments of the app you want to use inside the mactomb file
+  -b <output>\tThe bash script used to launch the <app> inside the mactomb file <file>\n
 forge:
-  Will call both "create" and "app", so the flags are the same.
+  Will call both "create" and "app" if all flags are specified. Can be called on \n  already created files, in this case skipping "create" and/or "app"
   Optional:
-    -s <output>\tThe output Automator script used to launch the bash <output> script by Mac OS X
+    -o <output>\tThe Automator app used to launch the bash <output> script by Mac OS X
 	'''
 	return 2
 }
@@ -121,7 +121,7 @@ create() {
 	E_MESSAGE="Failed creating the mactomb file '${FILENAME}': "
 
 	if [[ ! "${FILENAME}" || ! "$SIZE" ]]; then
-		E_MESSAGE+="You must specify a filename and/or a size!"
+		E_MESSAGE="You must specify a filename and/or a size!"
 		return 1
 	fi
 
@@ -136,32 +136,38 @@ create() {
 		return 1
 	fi
 
-	r=`${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight`
+	r=$(${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname $VOLNAME 2>&1)
 
-	if [[ "$r" =~ "failed" || "$r" =~ "error" ]]; then
+	if [[ "$r" =~ "failed" || "$r" =~ "error" || "$r" =~ "canceled" ]]; then
+        E_MESSAGE+=$r
 		return 1
 	fi
+    s_echo "mactomb file '${FILENAME}' successfully created!"
 
 	if [[ "$PROFILE" ]]; then
-		s_echo "tombfile '${FILENAME}' successfully created!"
 		echo -e "\nCopying profile file(s) into the mactomb..."
 
 		r=$(${HDIUTIL} attach "${FILENAME}")
 
-		vol=$(grep "/Volumes" <<< "$r" | awk -F ' ' '{print $3}')
-
-		# enforce a check - don't trust hdiutil output
-		if [[ "$vol" =~ "/Volumes/" ]]; then
+        abs_vol_path="/Volumes/$VOLNAME"
+		# enforce a check - don't trust hdiutil
+		if [[ -d  "$abs_vol_path" ]]; then
+            # do not let the script fails if cp fails
 			if [ -e "$PROFILE" ]; then
-				cp -rv "$PROFILE" "$vol"
-				s_echo "\nFile(s) successfully copied!"
+                echo
+				cp -rv "$PROFILE" "$abs_vol_path"
+                if [ "$?" -eq 1 ]; then
+                    e_echo "File(s) not copied!"
+                else
+				    s_echo "File(s) successfully copied!"
+                fi
 			else
 				e_echo "Cannot find $PROFILE. File(s) not copied."
 			fi
 			# meh. it's ok to have two times the same message
 			S_MESSAGE="mactomb file '${FILENAME}' successfully created!"
 			# I really don't care about the exit status.
-			${HDIUTIL} detach "$vol" &> /dev/null
+			${HDIUTIL} detach "$abs_vol_path" &> /dev/null
 		else
 			E_MESSAGE="Problem mounting the mactomb file."
 			return 1
@@ -172,8 +178,8 @@ create() {
 }
 
 app() {
-	if [[ ! "$APPPATH" || ! "OUTSCRIPT" || ! "$FILENAME" ]]; then
-		E_MESSAGE="Please specify -a -o -f."
+	if [[ ! "$APPCMD" || ! "$BASHSCRIPT" || ! "$FILENAME" ]]; then
+		E_MESSAGE="Please specify -a -b -f."
 		return 1
 	fi
 
@@ -182,13 +188,16 @@ app() {
 		return 1
 	fi
 
-	if [ ! -e "$APPPATH" ]; then
-		E_MESSAGE="Cannot find $APPPATH."
+    # check if we included a command (with spaces) or a binary path
+    read -ra app_arr -d '' <<< "$APPCMD"
+
+	if [ ! -e "${app_arr[0]}" ]; then
+		E_MESSAGE="Cannot find ${app_arr[0]}."
 		return 1
 	fi
 
-	if [ -e "$OUTSCRIPT" ]; then
-		E_MESSAGE="$OUTSCRIPT already exists."
+	if [ -e "$BASHSCRIPT" ]; then
+		E_MESSAGE="$BASHSCRIPT already exists."
 		return 1
 	fi
 
@@ -198,55 +207,82 @@ app() {
 	fi
 
 	# ensure absolute path for the app
-	if [[ $(dirname "$APPPATH") == "." ]]; then
-		APPPATH="$(PWD)"/"${APPPATH}"
+	if [[ $(dirname "$APPCMD") == "." ]]; then
+		APPCMD="$(PWD)"/"${APPCMD}"
 	fi
 
-	$(cat << EOF > "$OUTSCRIPT"
+    for i in ${!app_arr[@]}; do
+        if [[ "${app_arr[$i]}" =~ "\$VOLNAME" ]]; then
+            abs_vol_path="/Volumes/$VOLNAME"
+            app_arr[$i]=$(sed -e "s@\$VOLNAME@$abs_vol_path@" <<< ${app_arr[$i]})
+        fi
+    done
+
+	$(cat << EOF > "$BASHSCRIPT"
 #!/bin/bash
 if [ -e "$FILENAME" ]; then
 	${HDIUTIL} attach "$FILENAME"
 	if [ \$? -eq 0 ]; then
-		$APPPATH
+		${app_arr[@]}
 	fi
 fi)
 
-	S_MESSAGE="File $OUTSCRIPT successfully created!"
+    # ensure our bash script is executable
+    chmod +x "$BASHSCRIPT"
+	S_MESSAGE="File $BASHSCRIPT successfully created!"
 	return 0
 }
 
 forge() {
-	s_echo "Creating the mactomb file..."
-	create
-	if [ "$?" -eq 1 ]; then
-		return 1
-	fi
+    E_MESSAGE="Tell me what to do!"
 
-	s_echo "Creating the output script..."
-	app
-	if [ "$?" -eq 1 ]; then
-		return 1
-	fi
+    if [[ "${FILENAME}" && "$SIZE" ]]; then
+	   s_echo "Creating the mactomb file..."
+	   create
+	   if [ "$?" -eq 1 ]; then
+		  return 1
+	   fi
+    fi
 
-	s_echo "Creating the Automator script to call the output script..."
+    if [[ "$APPCMD" && "$BASHSCRIPT" && "$FILENAME" ]]; then
+	   s_echo "Creating the output script..."
+	   app
+	   if [ "$?" -eq 1 ]; then
+		  return 1
+	   fi
+    fi
 
-	base_filename=$(basename "$FILENAME")
-	# stripping the dmg extension and adding the automator extension (.app)
-	automatr="${base_filename%.dmg}.app"
+    if [[ "$OUTSCRIPT" ]]; then
+        # we can't create the Automator app without bash script!
+        if [[ ! "$BASHSCRIPT" ]]; then
+            E_MESSAGE="No bash script set. Please use the -b flag"
+            return 1
+        fi
 
-	# keep the template safe
-	cp -r "$AUTOMATOR" "$automatr"
+        s_echo "Creating the Automator app to call the output script..."
 
-	# ensure absolute path for the output script
-	if [[ $(dirname "$OUTSCRIPT") == "." ]]; then
-		OUTSCRIPT="$(PWD)"/"${OUTSCRIPT}"
-	fi
+        # ensure we have the .app extension to let Mac recognise it as app
+        if [[ "${OUTSCRIPT##*.}" != "app" ]]; then
+            OUTSCRIPT+=".app"
+        fi
 
-	# let's the magic happen!
-	sed -i '' -e "s@SCRIPT_TO_RUN@$OUTSCRIPT@" "${automatr}/Contents/document.wflow"
+        # ensure absolute path for the output app
+        if [[ $(dirname "$OUTSCRIPT") == "." ]]; then
+            OUTSCRIPT="$(PWD)"/"${OUTSCRIPT}"
+        fi
 
-	S_MESSAGE="Mactomb forged! Now double click on $automatr to start your app inside the mactomb."
-	return 0
+        # keep the template safe
+        cp -r "$AUTOMATOR" "${OUTSCRIPT}"
+
+        # let's the magic happen!
+        sed -i '' -e "s@SCRIPT_TO_RUN@$BASHSCRIPT@" "${OUTSCRIPT}/Contents/document.wflow"
+
+        S_MESSAGE="Mactomb forged! Now double click on $automatr to start your app inside the mactomb."
+
+        return 0
+    fi
+
+	return 1
 }
 
 COMMAND=('create', 'app', 'help', 'forge', 'resize')
@@ -256,16 +292,20 @@ NOTIFICATION=0
 ENC="AES-256"
 FS="HFS+"
 # path to the app used for the script
-APPPATH=""
-# output script for automatically call the app defined in APPPATH
+APPCMD=""
+# output script for automatically call the app defined in APPCMD
+BASHSCRIPT=""
+# output Automator app that is in charge to call $BASHSCRIPT
 OUTSCRIPT=""
 # automator template
 AUTOMATOR="template.app"
-VERSION=0.1
+# default volume name for HFS+. Change this if you don't like it
+VOLNAME="untitled"
+VERSION=1.0
 CMD=$1
 shift
 
-while getopts "a:f:s:p:o:nh" opt; do
+while getopts "a:f:s:p:o:b:nh" opt; do
 	case "${opt}" in
 		f)
 			FILENAME=$OPTARG;;
@@ -274,9 +314,11 @@ while getopts "a:f:s:p:o:nh" opt; do
 		n)
 			NOTIFICATION=1;;
 		a)
-			APPPATH=$OPTARG;;
+			APPCMD=$OPTARG;;
 		p)
 			PROFILE=$OPTARG;;
+        b)
+            BASHSCRIPT=$OPTARG;;
 		o)
 			OUTSCRIPT=$OPTARG;;
 		v)
