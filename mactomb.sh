@@ -139,28 +139,28 @@ create() {
 	r=$(${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname $VOLNAME 2>&1)
 
 	if [[ "$r" =~ "failed" || "$r" =~ "error" || "$r" =~ "canceled" ]]; then
-        E_MESSAGE+=$r
+		E_MESSAGE+=$r
 		return 1
 	fi
-    s_echo "mactomb file '${FILENAME}' successfully created!"
+	s_echo "mactomb file '${FILENAME}' successfully created!"
 
 	if [[ "$PROFILE" ]]; then
 		echo -e "\nCopying profile file(s) into the mactomb..."
 
 		r=$(${HDIUTIL} attach "${FILENAME}")
 
-        abs_vol_path="/Volumes/$VOLNAME"
+		abs_vol_path="/Volumes/$VOLNAME"
 		# enforce a check - don't trust hdiutil
 		if [[ -d  "$abs_vol_path" ]]; then
-            # do not let the script fails if cp fails
+			# do not let the script fails if cp fails
 			if [ -e "$PROFILE" ]; then
-                echo
+				echo
 				cp -rv "$PROFILE" "$abs_vol_path"
-                if [ "$?" -eq 1 ]; then
-                    e_echo "File(s) not copied!"
-                else
-				    s_echo "File(s) successfully copied!"
-                fi
+				if [ "$?" -eq 1 ]; then
+					e_echo "File(s) not copied!"
+				else
+					s_echo "File(s) successfully copied!"
+				fi
 			else
 				e_echo "Cannot find $PROFILE. File(s) not copied."
 			fi
@@ -188,8 +188,8 @@ app() {
 		return 1
 	fi
 
-    # check if we included a command (with spaces) or a binary path
-    read -ra app_arr -d '' <<< "$APPCMD"
+	# check if we included a command (with spaces) or a binary path
+	read -ra app_arr -d '' <<< "$APPCMD"
 
 	if [ ! -e "${app_arr[0]}" ]; then
 		E_MESSAGE="Cannot find ${app_arr[0]}."
@@ -211,12 +211,12 @@ app() {
 		APPCMD="$(PWD)"/"${APPCMD}"
 	fi
 
-    for i in ${!app_arr[@]}; do
-        if [[ "${app_arr[$i]}" =~ "\$VOLNAME" ]]; then
-            abs_vol_path="/Volumes/$VOLNAME"
-            app_arr[$i]=$(sed -e "s@\$VOLNAME@$abs_vol_path@" <<< ${app_arr[$i]})
-        fi
-    done
+	for i in ${!app_arr[@]}; do
+		if [[ "${app_arr[$i]}" =~ "\$VOLNAME" ]]; then
+			abs_vol_path="/Volumes/$VOLNAME"
+			app_arr[$i]=$(sed -e "s@\$VOLNAME@$abs_vol_path@" <<< ${app_arr[$i]})
+		fi
+	done
 
 	$(cat << EOF > "$BASHSCRIPT"
 #!/bin/bash
@@ -227,60 +227,60 @@ if [ -e "$FILENAME" ]; then
 	fi
 fi)
 
-    # ensure our bash script is executable
-    chmod +x "$BASHSCRIPT"
+	# ensure our bash script is executable
+	chmod +x "$BASHSCRIPT"
 	S_MESSAGE="File $BASHSCRIPT successfully created!"
 	return 0
 }
 
 forge() {
-    E_MESSAGE="Tell me what to do!"
+	E_MESSAGE="Tell me what to do!"
 
-    if [[ "${FILENAME}" && "$SIZE" ]]; then
-	   s_echo "Creating the mactomb file..."
-	   create
-	   if [ "$?" -eq 1 ]; then
-		  return 1
-	   fi
-    fi
+	if [[ "${FILENAME}" && "$SIZE" ]]; then
+		s_echo "Creating the mactomb file..."
+		create
+		if [ "$?" -eq 1 ]; then
+			return 1
+		fi
+	fi
 
-    if [[ "$APPCMD" && "$BASHSCRIPT" && "$FILENAME" ]]; then
-	   s_echo "Creating the output script..."
-	   app
-	   if [ "$?" -eq 1 ]; then
-		  return 1
-	   fi
-    fi
+	if [[ "$APPCMD" && "$BASHSCRIPT" && "$FILENAME" ]]; then
+		s_echo "Creating the output script..."
+		app
+		if [ "$?" -eq 1 ]; then
+			return 1
+		fi
+	fi
 
-    if [[ "$OUTSCRIPT" ]]; then
-        # we can't create the Automator app without bash script!
-        if [[ ! "$BASHSCRIPT" ]]; then
-            E_MESSAGE="No bash script set. Please use the -b flag"
-            return 1
-        fi
+	if [[ "$OUTSCRIPT" ]]; then
+		# we can't create the Automator app without bash script!
+		if [[ ! "$BASHSCRIPT" ]]; then
+			E_MESSAGE="No bash script set. Please use the -b flag"
+			return 1
+		fi
 
-        s_echo "Creating the Automator app to call the output script..."
+		s_echo "Creating the Automator app to call the output script..."
 
-        # ensure we have the .app extension to let Mac recognise it as app
-        if [[ "${OUTSCRIPT##*.}" != "app" ]]; then
-            OUTSCRIPT+=".app"
-        fi
+		# ensure we have the .app extension to let Mac recognise it as app
+		if [[ "${OUTSCRIPT##*.}" != "app" ]]; then
+			OUTSCRIPT+=".app"
+		fi
 
-        # ensure absolute path for the output app
-        if [[ $(dirname "$OUTSCRIPT") == "." ]]; then
-            OUTSCRIPT="$(PWD)"/"${OUTSCRIPT}"
-        fi
+		# ensure absolute path for the output app
+		if [[ $(dirname "$OUTSCRIPT") == "." ]]; then
+			OUTSCRIPT="$(PWD)"/"${OUTSCRIPT}"
+		fi
 
-        # keep the template safe
-        cp -r "$AUTOMATOR" "${OUTSCRIPT}"
+		# keep the template safe
+		cp -r "$AUTOMATOR" "${OUTSCRIPT}"
 
-        # let's the magic happen!
-        sed -i '' -e "s@SCRIPT_TO_RUN@$BASHSCRIPT@" "${OUTSCRIPT}/Contents/document.wflow"
+		# let's the magic happen!
+		sed -i '' -e "s@SCRIPT_TO_RUN@$BASHSCRIPT@" "${OUTSCRIPT}/Contents/document.wflow"
 
-        S_MESSAGE="Mactomb forged! Now double click on $automatr to start your app inside the mactomb."
+		S_MESSAGE="Mactomb forged! Now double click on $automatr to start your app inside the mactomb."
 
-        return 0
-    fi
+		return 0
+	fi
 
 	return 1
 }
@@ -317,8 +317,8 @@ while getopts "a:f:s:p:o:b:nh" opt; do
 			APPCMD=$OPTARG;;
 		p)
 			PROFILE=$OPTARG;;
-        b)
-            BASHSCRIPT=$OPTARG;;
+		b)
+			BASHSCRIPT=$OPTARG;;
 		o)
 			OUTSCRIPT=$OPTARG;;
 		v)
