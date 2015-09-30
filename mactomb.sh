@@ -72,20 +72,27 @@ check_size() {
 	return 1
 }
 
+list
 resize() {
+	E_MESSAGE="Cannot resize '$FILENAME': "
 	if [[ ! "${FILENAME}" || ! "${SIZE}" ]]; then
 		E_MESSAGE="Please specify the filename (-f) and the size (-s)"
 		return 1
 	fi
 
 	if [ ! -e "${FILENAME}" ]; then
-		E_MESSAGE="Cannot find $FILENAME"
+		E_MESSAGE+="file not found."
+		return 1
+	fi
+
+	if [ -d "${FILENAME}" ]; then
+		E_MESSAGE+="is a directory."
 		return 1
 	fi
 
 	check_size
 	if [ "$?" -eq 1 ]; then
-		E_MESSAGE="Wrong size numer!"
+		E_MESSAGE+="wrong size numer!"
 		return 1
 	fi
 
@@ -103,7 +110,7 @@ resize() {
 	elif [ $new_size -gt $st_size ]; then
 		param="-growonly"
 	else
-		E_MESSAGE="Size is the same. Not resizing"
+		E_MESSAGE+="size is the same. Not resizing"
 		return 1
 	fi
 
