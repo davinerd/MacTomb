@@ -33,8 +33,8 @@ s_echo() {
 usage() {
 	banner
 	echo -e "Usage:"
-	echo -e "${0} <${COMMAND[@]}> -n\n"
-	echo -e "-n\tMac OS X Notification"
+	echo -e "${0} <${COMMAND[@]}> -v\n"
+	echo -e "-v\tMac OS X Notification"
 	echo -e "Use 'help' to show the full help"
 }
 
@@ -46,7 +46,8 @@ create:
   -f <file>\t\tFile to create (the mactomb file)
   -s <size[m|g|t]\tSize of the file (m=mb, g=gb, t=tb)
   Optional:
-    -p <profile>\tFolder/file to copy into the newly created mactomb file <file>\n
+    -p <profile>\tFolder/file to copy into the newly created mactomb <file>
+    -n <volname>\tSpecify the volume name to assign to the mactomb <file>\n
 app:
   -f <file>\tEncrypted DMG to use as mactomb file (already created)
   -a <app>\tBinary and arguments of the app you want to use inside the mactomb file
@@ -125,6 +126,11 @@ create() {
 		return 1
 	fi
 
+	if [ -d "${FILENAME}" ]; then
+		E_MESSAGE+="File is a directory"
+		return 1
+	fi
+
 	if [ -e "${FILENAME}" ]; then
 		E_MESSAGE+="File arealdy exists!"
 		return 1
@@ -142,6 +148,12 @@ create() {
 		E_MESSAGE+=$r
 		return 1
 	fi
+
+	# ensure FILENAME ends in dmg
+	if [[ "${FILENAME##*.}" != "dmg" ]]; then
+		FILENAME+=".dmg"
+	fi	
+
 	s_echo "mactomb file '${FILENAME}' successfully created!"
 
 	if [[ "$PROFILE" ]]; then
@@ -154,8 +166,8 @@ create() {
 		if [[ -d  "$abs_vol_path" ]]; then
 			# do not let the script fails if cp fails
 			if [ -e "$PROFILE" ]; then
-				echo
 				cp -rv "$PROFILE" "$abs_vol_path"
+				echo
 				if [ "$?" -eq 1 ]; then
 					e_echo "File(s) not copied!"
 				else
@@ -169,7 +181,7 @@ create() {
 			# I really don't care about the exit status.
 			${HDIUTIL} detach "$abs_vol_path" &> /dev/null
 		else
-			E_MESSAGE="Problem mounting the mactomb file."
+			E_MESSAGE="Problem mounting the mactomb file, file(s) not copied."
 			return 1
 		fi
 	fi
@@ -178,6 +190,7 @@ create() {
 }
 
 app() {
+	E_MESSAGE="Failed creating the script: "
 	if [[ ! "$APPCMD" || ! "$BASHSCRIPT" || ! "$FILENAME" ]]; then
 		E_MESSAGE="Please specify -a -b -f."
 		return 1
@@ -192,12 +205,17 @@ app() {
 	read -ra app_arr -d '' <<< "$APPCMD"
 
 	if [ ! -e "${app_arr[0]}" ]; then
-		E_MESSAGE="Cannot find ${app_arr[0]}."
+		E_MESSAGE+="Cannot find ${app_arr[0]}."
 		return 1
 	fi
 
-	if [ -e "$BASHSCRIPT" ]; then
-		E_MESSAGE="$BASHSCRIPT already exists."
+	if [ -d "${BASHSCRIPT}" ]; then
+		E_MESSAGE+="$BASHSCRIPT is a directory."
+		return 1
+	fi
+
+	if [ -e "${BASHSCRIPT}" ]; then
+		E_MESSAGE+="$BASHSCRIPT already exists."
 		return 1
 	fi
 
@@ -211,9 +229,19 @@ app() {
 		APPCMD="$(PWD)"/"${APPCMD}"
 	fi
 
+	if [ -e "${APPCMD}" ]; then
+		E_MESSAGE+="$APPCMD already exists."
+		return 1
+	fi
+
+	if [ -e "${APPCMD}" ]; then
+		E_MESSAGE+="$APPCMD is a directory"
+		return 1
+	fi 
+
+	abs_vol_path="/Volumes/$VOLNAME"
 	for i in ${!app_arr[@]}; do
 		if [[ "${app_arr[$i]}" =~ "\$VOLNAME" ]]; then
-			abs_vol_path="/Volumes/$VOLNAME"
 			app_arr[$i]=$(sed -e "s@\$VOLNAME@$abs_vol_path@" <<< ${app_arr[$i]})
 		fi
 	done
@@ -224,6 +252,7 @@ if [ -e "$FILENAME" ]; then
 	${HDIUTIL} attach "$FILENAME"
 	if [ \$? -eq 0 ]; then
 		${app_arr[@]}
+		${HDIUTIL} detach "$abs_vol_path"
 	fi
 fi)
 
@@ -271,6 +300,16 @@ forge() {
 			OUTSCRIPT="$(PWD)"/"${OUTSCRIPT}"
 		fi
 
+		if [ -e "$OUTSCRIPT" ]; then
+			E_MESSAGE="$OUTSCRIPT already exists."
+			return 1
+		fi
+
+		if [ -d "$OUTSCRIPT" ]; then
+			E_MESSAGE="$OUTSCRIPT is a directory."
+			return 1
+		fi
+
 		# keep the template safe
 		cp -r "$AUTOMATOR" "${OUTSCRIPT}"
 
@@ -301,18 +340,18 @@ OUTSCRIPT=""
 AUTOMATOR="template.app"
 # default volume name for HFS+. Change this if you don't like it
 VOLNAME="untitled"
-VERSION=1.0
+VERSION=1.1
 CMD=$1
 shift
 
-while getopts "a:f:s:p:o:b:nh" opt; do
+while getopts "a:f:s:p:o:b:n:h" opt; do
 	case "${opt}" in
 		f)
 			FILENAME=$OPTARG;;
 		s)
 			SIZE=$OPTARG;;
 		n)
-			NOTIFICATION=1;;
+			VOLNAME=$OPTARG;;
 		a)
 			APPCMD=$OPTARG;;
 		p)
@@ -322,10 +361,10 @@ while getopts "a:f:s:p:o:b:nh" opt; do
 		o)
 			OUTSCRIPT=$OPTARG;;
 		v)
-			VERBOSE=1;;
+			NOTIFICATION=1;;
 		\?)
 			e_echo "Invalid option: -$OPTARG" >&2;;
-    esac
+	esac
 done
 
 if [[ ! "${COMMAND[@]}" =~ "${CMD}" ]]; then

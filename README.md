@@ -1,6 +1,13 @@
 # MacTomb
 MacTomb is a kind of [Tomb](https://github.com/dyne/Tomb) porting for Mac OS X. It allows you to create encrypted DMG file (called `mactomb`), copy files and folders into it and setup a couple of scripts needed to easily mount & run apps that use files stored inside the mactomb.
 
+# What's new? (v.1.1)
+- changing flags (again!): now `-n` specify the name of the volume (the famous `$VOLNAME`) while `-v` enables Mac OS X notification
+- now the bash script umount the mactomb when closing the application. It means that when you close the Automatr App, the mactomb will be umounted
+- added strong checks to verify if bash script and Automator App already exist or they are a directory
+- added a check for the filename to ensure it contains/adds the `.dmg` extension
+- better error messages
+
 # What's new? (v.1.0)
 Version 1.0 released! Yes, from 0.1 to 1.0. Why? Big improvements has been made. Read below:
 - there was a conflict between two `-s` options (size and Automator app). Now the Automator app has the `-o` flag and the bash script (that previously was `-o`) becomes `-b`.
@@ -15,21 +22,22 @@ Version 1.0 released! Yes, from 0.1 to 1.0. Why? Big improvements has been made.
 The help is quite explicit:
 ```
 $ bash mactomb.sh help
-..:: MacTomb v.1.0 ::..
+..:: MacTomb v.1.1 ::..
 by Davide Barbato
 
 Help!
 
 create:
-  -f <file>     File to create (the mactomb file)
-  -s <size[m|g|t]   Size of the file (m=mb, g=gb, t=tb)
+  -f <file>   File to create (the mactomb file)
+  -s <size[m|g|t] Size of the file (m=mb, g=gb, t=tb)
   Optional:
-    -p <profile>    Folder/file to copy into the newly created mactomb file <file>
+    -p <profile>  Folder/file to copy into the newly created mactomb <file>
+    -n <volname>  Specify the volume name to assign to the mactomb <file>
 
 app:
   -f <file> Encrypted DMG to use as mactomb file (already created)
   -a <app>  Binary and arguments of the app you want to use inside the mactomb file
-  -b <output>   The bash script used to launch the <app> inside the mactomb file <file>
+  -b <output> The bash script used to launch the <app> inside the mactomb file <file>
 
 forge:
   Will call both "create" and "app" if all flags are specified. Can be called on 
