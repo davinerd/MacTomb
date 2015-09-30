@@ -72,7 +72,6 @@ check_size() {
 	return 1
 }
 
-list
 resize() {
 	E_MESSAGE="Cannot resize '$FILENAME': "
 	if [[ ! "${FILENAME}" || ! "${SIZE}" ]]; then
