@@ -72,6 +72,98 @@ check_size() {
 	return 1
 }
 
+list() {
+	# colours! even if I don't need all of them...colours!
+	local BLUE="\x1b[0;34m"
+    local RED="\x1b[0;31m"
+    local GREEN="\x1b[0;32m"
+    local YELLOW="\x1b[1;33m"
+    local WHITE="\x1b[1;37m"
+    local LIGHT_RED="\x1b[1;31m"
+    local LIGHT_GREEN="\x1b[1;32m"
+    local LIGHT_BLUE="\x1b[1;34m"
+    local LIGHT_CYAN="\x1b[1;36m"
+    local NO_COLOUR="\x1b[0m"
+    local mountpoint mnt space_tot used avail perc oid
+	
+    if [ ! -e '/usr/libexec/PlistBuddy' ] || [ ! -x '/usr/libexec/PlistBuddy' ]; then
+    	E_MESSAGE="/usr/libexec/PlistBuddy not found. Maybe is on a different path or not installed?"
+    	return 1
+    fi
+
+	local tempfile=$(mktemp /tmp/$RANDOM.XXX)
+	${HDIUTIL} info -plist > $tempfile
+
+	local -i idx=0
+	local -i cnt=0
+	while True; do
+		imgpath=$(/usr/libexec/PlistBuddy -c Print:images:$idx:image-path $tempfile 2>/dev/null)
+		if [ ! "$imgpath" ]; then
+			break
+		fi
+		encrypted=$(/usr/libexec/PlistBuddy -c Print:images:$idx:image-encrypted $tempfile)
+		removable=$(/usr/libexec/PlistBuddy -c Print:images:$idx:removable $tempfile)
+		writeable=$(/usr/libexec/PlistBuddy -c Print:images:$idx:writeable $tempfile)
+		oid=$(/usr/libexec/PlistBuddy -c Print:images:$idx:owner-uid $tempfile)
+
+		local out=$(dscl . -search /Users UniqueID $oid)
+		local owner=$(cut -d ' ' -f1 <<< $out)
+
+		local -i j=0
+		while True; do
+			mountpoint=$(/usr/libexec/PlistBuddy -c Print:images:$idx:system-entities:$j $tempfile 2>/dev/null)
+			# we can skip the while loop since it means there are no system-entities left
+			# then it doesn't contain the mount-point for sure 
+			if [ ! "$mountpoint" ]; then
+				break
+			fi
+
+			mountpoint=$(/usr/libexec/PlistBuddy -c Print:images:$idx:system-entities:$j:mount-point $tempfile 2>/dev/null)
+			# mount-point is not mandatory inside system-entities
+			if [ "$mountpoint" ]; then
+				read -ra space_tot -d ''<<< $(df -h "$mountpoint" | awk -F ' ' '{print $2}')
+				read -ra used -d '' <<< $(df -h "$mountpoint" | awk -F ' ' '{print $3}')
+				read -ra avail -d '' <<< $(df -h "$mountpoint" | awk -F ' ' '{print $4}')
+				read -ra perc -d '' <<< $(df -h "$mountpoint" | awk -F ' ' '{print $5}')
+				# pretty lame...
+				mnt=$mountpoint
+			fi
+			j+=1
+		done
+
+		# assume that macbombs are encrypted, removable and writable
+		# it's too loose, but for now it's ok
+		if [[ "$encrypted" == "true" && "$removable" == "true" && "$writeable" == "true" ]]; then
+			echo "***************"
+			echo -e "${GREEN}Image Path$NO_COLOUR:\t$imgpath"
+			echo -e "${GREEN}Mount Point$NO_COLOUR:\t$mnt"
+			echo -e "${GREEN}${space_tot[0]}$NO_COLOUR:\t\t${space_tot[1]}"
+			echo -e "${GREEN}${used[0]}$NO_COLOUR:\t\t${used[1]}"
+			echo -e "${GREEN}${avail[0]}$NO_COLOUR:\t\t${avail[1]}"
+			
+			# it's nice to have different colours based on the percentage of used space
+			if [ ${perc[1]%?} -ge 50 ] && [ ${perc[1]%?} -lt 80 ]; then
+				local colour=${YELLOW}
+			elif [ ${perc[1]%?} -ge 80 ]; then
+				local colour=${RED}
+			fi
+			echo -e "${GREEN}${perc[0]}$NO_COLOUR:\t$colour${perc[1]}$NO_COLOUR"
+			echo -e "${GREEN}Owner$NO_COLOUR:\t\t$owner"
+			cnt+=1
+		fi
+		idx+=1
+	done
+
+	rm -rf $tempfile
+	if [ $cnt -gt 0 ]; then
+		echo
+		S_MESSAGE="There are nr.$cnt mactomb(s) open"
+	else
+		S_MESSAGE="There are no mactombs opened"
+	fi
+	return 0
+}
+
 resize() {
 	E_MESSAGE="Cannot resize '$FILENAME': "
 	if [[ ! "${FILENAME}" || ! "${SIZE}" ]]; then
@@ -95,8 +187,9 @@ resize() {
 		return 1
 	fi
 
-	num=${SIZE%?}
-	new_size=$(( ($num*1024)*1024 ))
+	local num=${SIZE%?}
+	local new_size=$(( ($num*1024)*1024 ))
+	local param
 
 	# risky...but nice!
 	eval $(stat -s "$FILENAME")
@@ -148,7 +241,7 @@ create() {
 		return 1
 	fi
 
-	r=$(${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname $VOLNAME 2>&1)
+	local r=$(${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname $VOLNAME 2>&1)
 
 	if [[ "$r" =~ "failed" || "$r" =~ "error" || "$r" =~ "canceled" ]]; then
 		E_MESSAGE+=$r
@@ -167,7 +260,7 @@ create() {
 
 		r=$(${HDIUTIL} attach "${FILENAME}")
 
-		abs_vol_path="/Volumes/$VOLNAME"
+		local abs_vol_path="/Volumes/$VOLNAME"
 		# enforce a check - don't trust hdiutil
 		if [[ -d  "$abs_vol_path" ]]; then
 			# do not let the script fails if cp fails
@@ -245,7 +338,7 @@ app() {
 		return 1
 	fi 
 
-	abs_vol_path="/Volumes/$VOLNAME"
+	local abs_vol_path="/Volumes/$VOLNAME"
 	for i in ${!app_arr[@]}; do
 		if [[ "${app_arr[$i]}" =~ "\$VOLNAME" ]]; then
 			app_arr[$i]=$(sed -e "s@\$VOLNAME@$abs_vol_path@" <<< ${app_arr[$i]})
@@ -330,7 +423,7 @@ forge() {
 	return 1
 }
 
-COMMAND=('create', 'app', 'help', 'forge', 'resize')
+COMMAND=('create', 'app', 'help', 'forge', 'resize', 'list')
 HDIUTIL=/usr/bin/hdiutil
 # if 1, the script will use the Mac OS X notification method
 NOTIFICATION=0
@@ -350,7 +443,7 @@ VERSION=1.1
 CMD=$1
 shift
 
-while getopts "a:f:s:p:o:b:n:h" opt; do
+while getopts "a:f:s:p:o:b:n:hv" opt; do
 	case "${opt}" in
 		f)
 			FILENAME=$OPTARG;;
