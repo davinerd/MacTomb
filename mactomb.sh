@@ -254,7 +254,7 @@ create() {
 	fi	
 
 	s_echo "mactomb file '${FILENAME}' successfully created!"
-
+	
 	if [[ "$PROFILE" ]]; then
 		echo -e "\nCopying profile file(s) into the mactomb..."
 
@@ -275,8 +275,6 @@ create() {
 			else
 				e_echo "Cannot find $PROFILE. File(s) not copied."
 			fi
-			# meh. it's ok to have two times the same message
-			S_MESSAGE="mactomb file '${FILENAME}' successfully created!"
 			# I really don't care about the exit status.
 			${HDIUTIL} detach "$abs_vol_path" &> /dev/null
 		else
@@ -284,6 +282,8 @@ create() {
 			return 1
 		fi
 	fi
+
+	S_MESSAGE="Enjoy your mactomb"
 
 	return 0
 }
