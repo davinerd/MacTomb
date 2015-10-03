@@ -44,6 +44,8 @@ help() {
 	echo -e '''
 list:
 	list all opened mactombs\n
+chpass:
+  -f <file>\t\tChange passphrase of mactomb <file>\n 
 create:
   -f <file>\t\tFile to create (the mactomb file)
   -s <size[m|g|t]\tSize of the file (m=mb, g=gb, t=tb)
@@ -163,6 +165,34 @@ list() {
 	else
 		S_MESSAGE="There are no mactombs opened"
 	fi
+	return 0
+}
+
+chpass() {
+	E_MESSAGE="Cannot change passphrase: "
+
+	if [ ! "${FILENAME}" ]; then
+		E_MESSAGE="Please specify the filename (-f)"
+		return 1
+	fi
+
+	if [ ! -e "${FILENAME}" ]; then
+		E_MESSAGE+="'${FILENAME}' not found."
+		return 1
+	fi
+
+	if [ -d "${FILENAME}" ]; then
+		E_MESSAGE+="'${FILENAME}' is a directory."
+		return 1
+	fi
+
+	${HDIUTIL} chpass "${FILENAME}"
+	if [ "$?" -eq 1 ]; then
+		E_MESSAGE+="something went wrong!"
+		return 1
+	fi
+
+	S_MESSAGE="Successfully changed your passphrase!"
 	return 0
 }
 
@@ -425,7 +455,7 @@ forge() {
 	return 1
 }
 
-COMMAND=('create', 'app', 'help', 'forge', 'resize', 'list')
+COMMAND=('create', 'app', 'help', 'forge', 'resize', 'list', 'chpass')
 HDIUTIL=/usr/bin/hdiutil
 # if 1, the script will use the Mac OS X notification method
 NOTIFICATION=0
