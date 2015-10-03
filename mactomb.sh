@@ -42,6 +42,8 @@ help() {
 	banner
 	echo "Help!"
 	echo -e '''
+list:
+	list all opened mactombs\n
 create:
   -f <file>\t\tFile to create (the mactomb file)
   -s <size[m|g|t]\tSize of the file (m=mb, g=gb, t=tb)
@@ -75,21 +77,21 @@ check_size() {
 list() {
 	# colours! even if I don't need all of them...colours!
 	local BLUE="\x1b[0;34m"
-    local RED="\x1b[0;31m"
-    local GREEN="\x1b[0;32m"
-    local YELLOW="\x1b[1;33m"
-    local WHITE="\x1b[1;37m"
-    local LIGHT_RED="\x1b[1;31m"
-    local LIGHT_GREEN="\x1b[1;32m"
-    local LIGHT_BLUE="\x1b[1;34m"
-    local LIGHT_CYAN="\x1b[1;36m"
-    local NO_COLOUR="\x1b[0m"
-    local mountpoint mnt space_tot used avail perc oid
-	
-    if [ ! -e '/usr/libexec/PlistBuddy' ] || [ ! -x '/usr/libexec/PlistBuddy' ]; then
-    	E_MESSAGE="/usr/libexec/PlistBuddy not found. Maybe is on a different path or not installed?"
-    	return 1
-    fi
+	local RED="\x1b[0;31m"
+	local GREEN="\x1b[0;32m"
+	local YELLOW="\x1b[1;33m"
+	local WHITE="\x1b[1;37m"
+	local LIGHT_RED="\x1b[1;31m"
+	local LIGHT_GREEN="\x1b[1;32m"
+	local LIGHT_BLUE="\x1b[1;34m"
+	local LIGHT_CYAN="\x1b[1;36m"
+	local NO_COLOUR="\x1b[0m"
+	local mountpoint mnt space_tot used avail perc oid
+
+	if [ ! -e '/usr/libexec/PlistBuddy' ] || [ ! -x '/usr/libexec/PlistBuddy' ]; then
+		E_MESSAGE="/usr/libexec/PlistBuddy not found. Maybe is on a different path or not installed?"
+		return 1
+	fi
 
 	local tempfile=$(mktemp /tmp/$RANDOM.XXX)
 	${HDIUTIL} info -plist > $tempfile
