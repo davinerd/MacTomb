@@ -51,6 +51,7 @@ create:
   -s <size[m|g|t]\tSize of the file (m=mb, g=gb, t=tb)
   Optional:
     -p <profile>\tFolder/file to copy into the newly created mactomb <file>
+    -c\t\t\tCreate a compressed mactomb <file> (zlib)
     -n <volname>\tSpecify the volume name to assign to the mactomb <file>\n
 app:
   -f <file>\tEncrypted DMG to use as mactomb file (already created)
@@ -100,6 +101,7 @@ list() {
 
 	local -i idx=0
 	local -i cnt=0
+	local compressed="No"
 	while True; do
 		imgpath=$(/usr/libexec/PlistBuddy -c Print:images:$idx:image-path $tempfile 2>/dev/null)
 		if [ ! "$imgpath" ]; then
@@ -108,6 +110,7 @@ list() {
 		encrypted=$(/usr/libexec/PlistBuddy -c Print:images:$idx:image-encrypted $tempfile)
 		removable=$(/usr/libexec/PlistBuddy -c Print:images:$idx:removable $tempfile)
 		writeable=$(/usr/libexec/PlistBuddy -c Print:images:$idx:writeable $tempfile)
+		imgtype=$(/usr/libexec/PlistBuddy -c Print:images:$idx:image-type $tempfile)
 		oid=$(/usr/libexec/PlistBuddy -c Print:images:$idx:owner-uid $tempfile)
 
 		local out=$(dscl . -search /Users UniqueID $oid)
@@ -141,6 +144,10 @@ list() {
 			echo "***************"
 			echo -e "${GREEN}Image Path$NO_COLOUR:\t$imgpath"
 			echo -e "${GREEN}Mount Point$NO_COLOUR:\t$mnt"
+			if [[ "$imgtype" =~ "compressed" ]]; then
+				compressed="Yes"
+			fi
+			echo -e "${GREEN}Compressed$NO_COLOUR:\t$compressed"
 			echo -e "${GREEN}${space_tot[0]}$NO_COLOUR:\t\t${space_tot[1]}"
 			echo -e "${GREEN}${used[0]}$NO_COLOUR:\t\t${used[1]}"
 			echo -e "${GREEN}${avail[0]}$NO_COLOUR:\t\t${avail[1]}"
@@ -273,24 +280,31 @@ create() {
 		return 1
 	fi
 
-	local r=$(${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname $VOLNAME 2>&1)
-
-	if [[ "$r" =~ "failed" || "$r" =~ "error" || "$r" =~ "canceled" ]]; then
-		E_MESSAGE+=$r
-		return 1
-	fi
-
-	# ensure FILENAME ends in dmg
-	if [[ "${FILENAME##*.}" != "dmg" ]]; then
-		FILENAME+=".dmg"
-	fi	
-
-	s_echo "mactomb file '${FILENAME}' successfully created!"
+	local ret
 	
-	if [[ "$PROFILE" ]]; then
+	# this can be quite huge block to read but I was not able to find a more elegant solution
+
+	if [[ "${COMPRESS}" -eq 1 && "${PROFILE}" ]]; then
+		s_echo "Creating, copying and compressing the mactomb..."
+		ret=$(${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname $VOLNAME \
+			-format $CFORMAT -imagekey zlib-level=$CLEVEL -srcfolder ${PROFILE} 2>&1)
+		if [[ "$ret" =~ "failed" || "$ret" =~ "error" || "$ret" =~ "canceled" ]]; then
+			E_MESSAGE+=$ret
+			return 1
+		fi
+		S_MESSAGE="mactomb file '${FILENAME}' successfully created!"
+	elif [[ "${COMPRESS}" -eq 0 && "${PROFILE}" ]]; then
+		s_echo "Creating the mactomb..."
+		ret=$(${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname $VOLNAME 2>&1)
+		if [[ "$ret" =~ "failed" || "$ret" =~ "error" || "$ret" =~ "canceled" ]]; then
+			E_MESSAGE+=$ret
+			return 1
+		fi
+		
+		s_echo "mactomb file '${FILENAME}' successfully created!"
 		echo -e "\nCopying profile file(s) into the mactomb..."
 
-		r=$(${HDIUTIL} attach "${FILENAME}")
+		ret=$(${HDIUTIL} attach "${FILENAME}")
 
 		local abs_vol_path="/Volumes/$VOLNAME"
 		# enforce a check - don't trust hdiutil
@@ -313,10 +327,40 @@ create() {
 			E_MESSAGE="Problem mounting the mactomb file, file(s) not copied."
 			return 1
 		fi
+		S_MESSAGE="Enjoy your mactomb"
+	elif [[ ! "${PROFILE}" && "${COMPRESS}" -eq 1 ]]; then
+		# problem is: if you specify -format UDZO, hdiutil requires -srcfolder to be set
+		# so we need to create a temp tomb and then compress (hdiutil convert)
+		local tmp="/tmp/$RANDOM.XXX"
+
+		s_echo "Creating a temporary mactomb..."
+		ret=$(${HDIUTIL} create "$tmp" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname $VOLNAME 2>&1)
+		if [[ "$ret" =~ "failed" || "$ret" =~ "error" || "$ret" =~ "canceled" ]]; then
+			rm -rf "${tmp}".dmg
+			E_MESSAGE+=$ret
+			return 1
+		fi
+
+		s_echo "Compressing..."
+		ret=$(${HDIUTIL} convert "$tmp".dmg -format $CFORMAT -imagekey zlib-level=$CLEVEL -o "${FILENAME}" 2>&1)
+		if [[ "$ret" =~ "failed" || "$ret" =~ "error" || "$ret" =~ "canceled" ]]; then
+			rm -rf "${tmp}".dmg
+			E_MESSAGE+=$ret
+			return 1
+		fi
+
+		# removing the temp file
+		rm -rf "${tmp}".dmg
+		S_MESSAGE="mactomb file '${FILENAME}' successfully created!"
+	else
+		ret=$(${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname $VOLNAME 2>&1)
+		if [[ "$ret" =~ "failed" || "$ret" =~ "error" || "$ret" =~ "canceled" ]]; then
+			E_MESSAGE+=$ret
+			return 1
+		fi
+		S_MESSAGE="mactomb file '${FILENAME}' successfully created!"
 	fi
-
-	S_MESSAGE="Enjoy your mactomb"
-
+	
 	return 0
 }
 
@@ -461,6 +505,12 @@ HDIUTIL=/usr/bin/hdiutil
 NOTIFICATION=0
 ENC="AES-256"
 FS="HFS+"
+# compression? 
+COMPRESS=0
+# compression format (should be the default)
+CFORMAT="UDZO"
+# zlib compression level (9 = highest)
+CLEVEL=9
 # path to the app used for the script
 APPCMD=""
 # output script for automatically call the app defined in APPCMD
@@ -475,7 +525,7 @@ VERSION=1.1
 CMD=$1
 shift
 
-while getopts "a:f:s:p:o:b:n:hv" opt; do
+while getopts "a:f:s:p:o:b:n:hvc" opt; do
 	case "${opt}" in
 		f)
 			FILENAME=$OPTARG;;
@@ -485,6 +535,8 @@ while getopts "a:f:s:p:o:b:n:hv" opt; do
 			VOLNAME=$OPTARG;;
 		a)
 			APPCMD=$OPTARG;;
+		c)
+			COMPRESS=1;;
 		p)
 			PROFILE=$OPTARG;;
 		b)
