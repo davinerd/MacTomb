@@ -43,15 +43,17 @@ help() {
 	echo "Help!"
 	echo -e '''
 list:
-	list all opened mactombs\n
+   list all opened mactombs\n
 chpass:
-  -f <file>\t\tChange passphrase of mactomb <file>\n 
+  -f <file>\t\tChange passphrase of mactomb <file>\n
+compress:
+  -f <file>\t\tCompress a mactomb <file> (will make it read-only)\n
 create:
   -f <file>\t\tFile to create (the mactomb file)
   -s <size[m|g|t]\tSize of the file (m=mb, g=gb, t=tb)
   Optional:
     -p <profile>\tFolder/file to copy into the newly created mactomb <file>
-    -c\t\t\tCreate a compressed mactomb <file> (zlib)
+    -c\t\t\tCreate a zlib compressed mactomb <file> (will make it read-only)
     -n <volname>\tSpecify the volume name to assign to the mactomb <file>\n
 app:
   -f <file>\tEncrypted DMG to use as mactomb file (already created)
@@ -63,6 +65,17 @@ forge:
     -o <output>\tThe Automator app used to launch the bash <output> script by Mac OS X
 	'''
 	return 2
+}
+
+compression_banner() {
+	echo '''
+##################################################
+#                  WARNING                       #
+#                                                #
+# Compression will make the mactomb be read-only #
+#                                                #
+##################################################
+		'''
 }
 
 check_size() {
@@ -257,6 +270,40 @@ resize() {
 	return 0
 }
 
+compress() {
+	E_MESSAGE="Failed compressing the mactomb file '${FILENAME}': "
+	if [[ ! "${FILENAME}" ]]; then
+		E_MESSAGE="You must specify a filename!"
+		return 1
+	fi
+
+	if [ -d "${FILENAME}" ]; then
+		E_MESSAGE+="file is a directory"
+		return 1
+	fi
+
+	if [ ! -e "${FILENAME}" ]; then
+		E_MESSAGE+="file not found."
+		return 1
+	fi
+
+	compression_banner
+
+	local tmp="/tmp/$RANDOM.$$.dmg"
+
+	s_echo "Compressing...(you'll asked to insert a new passphrase: choose a new one or insert the old one)"
+	ret=$(${HDIUTIL} convert "${FILENAME}" -format $CFORMAT -imagekey zlib-level=$CLEVEL -o "${tmp}" -encryption "$ENC" 2>&1)
+	if [[ "$ret" =~ "failed" || "$ret" =~ "error" || "$ret" =~ "canceled" ]]; then
+		E_MESSAGE+=$ret
+		return 1
+	fi
+
+	mv -f "$tmp" "${FILENAME}"
+	S_MESSAGE="Mactomb file '${FILENAME}' successfully compressed!"
+	return 0
+
+}
+
 create() {
 	E_MESSAGE="Failed creating the mactomb file '${FILENAME}': "
 
@@ -282,10 +329,20 @@ create() {
 	fi
 
 	local ret
+
+	ret=$(mount | grep "$VOLNAME")
+
+	if [[ "$ret" ]]; then
+		E_MESSAGE="Volume name '$VOLNAME' already used. Please pick up a different name (-n) or unmount it"
+		return 1
+	fi
 	
 	# this can be quite huge block to read but I was not able to find a more elegant solution
 
 	if [[ "${COMPRESS}" -eq 1 && "${PROFILE}" ]]; then
+
+		compression_banner
+		
 		s_echo "Creating, copying and compressing the mactomb..."
 		ret=$(${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname $VOLNAME \
 			-format $CFORMAT -imagekey zlib-level=$CLEVEL -srcfolder ${PROFILE} 2>&1)
@@ -296,7 +353,7 @@ create() {
 		S_MESSAGE="mactomb file '${FILENAME}' successfully created!"
 	elif [[ "${COMPRESS}" -eq 0 && "${PROFILE}" ]]; then
 		s_echo "Creating the mactomb..."
-		ret=$(${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname $VOLNAME 2>&1)
+		ret=$(${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname $VOLNAME -attach 2>&1)
 		if [[ "$ret" =~ "failed" || "$ret" =~ "error" || "$ret" =~ "canceled" ]]; then
 			E_MESSAGE+=$ret
 			return 1
@@ -305,7 +362,7 @@ create() {
 		s_echo "mactomb file '${FILENAME}' successfully created!"
 		echo -e "\nCopying profile file(s) into the mactomb..."
 
-		ret=$(${HDIUTIL} attach "${FILENAME}")
+		#ret=$(${HDIUTIL} attach "${FILENAME}")
 
 		local abs_vol_path="/Volumes/$VOLNAME"
 		# enforce a check - don't trust hdiutil
@@ -330,28 +387,31 @@ create() {
 		fi
 		S_MESSAGE="Enjoy your mactomb"
 	elif [[ ! "${PROFILE}" && "${COMPRESS}" -eq 1 ]]; then
+
+		compression_banner
+
 		# problem is: if you specify -format UDZO, hdiutil requires -srcfolder to be set
 		# so we need to create a temp tomb and then compress (hdiutil convert)
-		local tmp="/tmp/$RANDOM.XXX"
+		local tmp="/tmp/$RANDOM.$$.dmg"
 
-		s_echo "Creating a temporary mactomb..."
-		ret=$(${HDIUTIL} create "$tmp" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname $VOLNAME 2>&1)
+		# since 'convert' doesn't preserve encryption, let's create a normal container
+		# that will be encrypted by 'convert'
+		ret=$(${HDIUTIL} create "$tmp" -size "$SIZE" -fs "$FS" -nospotlight -volname $VOLNAME 2>&1)
 		if [[ "$ret" =~ "failed" || "$ret" =~ "error" || "$ret" =~ "canceled" ]]; then
-			rm -rf "${tmp}".dmg
+			rm -rf "${tmp}"
 			E_MESSAGE+=$ret
 			return 1
 		fi
 
-		s_echo "Compressing..."
-		ret=$(${HDIUTIL} convert "$tmp".dmg -format $CFORMAT -imagekey zlib-level=$CLEVEL -o "${FILENAME}" 2>&1)
+		ret=$(${HDIUTIL} convert "$tmp" -format $CFORMAT -imagekey zlib-level=$CLEVEL -o "${FILENAME}" -encryption "$ENC" 2>&1)
 		if [[ "$ret" =~ "failed" || "$ret" =~ "error" || "$ret" =~ "canceled" ]]; then
-			rm -rf "${tmp}".dmg
+			rm -rf "${tmp}"
 			E_MESSAGE+=$ret
 			return 1
 		fi
 
 		# removing the temp file
-		rm -rf "${tmp}".dmg
+		rm -rf "${tmp}"
 		S_MESSAGE="mactomb file '${FILENAME}' successfully created!"
 	else
 		ret=$(${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname $VOLNAME 2>&1)
@@ -500,7 +560,7 @@ forge() {
 	return 1
 }
 
-COMMAND=('create', 'app', 'help', 'forge', 'resize', 'list', 'chpass')
+COMMAND=('create', 'app', 'help', 'forge', 'resize', 'list', 'chpass', 'compress')
 HDIUTIL=/usr/bin/hdiutil
 # if 1, the script will use the Mac OS X notification method
 NOTIFICATION=0
@@ -547,7 +607,9 @@ while getopts "a:f:s:p:o:b:n:hvc" opt; do
 		v)
 			NOTIFICATION=1;;
 		\?)
-			e_echo "Invalid option: -$OPTARG" >&2;;
+			usage
+			exit 1
+			;;
 	esac
 done
 
