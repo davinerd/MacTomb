@@ -48,6 +48,8 @@ chpass:
   -f <file>\t\tChange passphrase of mactomb <file>\n
 compress:
   -f <file>\t\tCompress a mactomb <file> (will make it read-only)\n
+decompress:
+  -f <file>\t\tDecompress a mactomb <file>\n
 create:
   -f <file>\t\tFile to create (the mactomb file)
   -s <size[m|g|t]\tSize of the file (m=mb, g=gb, t=tb)
@@ -72,7 +74,7 @@ compression_banner() {
 ##################################################
 #                  WARNING                       #
 #                                                #
-# Compression will make the mactomb be read-only #
+#  Compression will make the mactomb read-only   #
 #                                                #
 ##################################################
 		'''
@@ -302,6 +304,37 @@ compress() {
 	S_MESSAGE="Mactomb file '${FILENAME}' successfully compressed!"
 	return 0
 
+}
+
+decompress() {
+	E_MESSAGE="Failed decompressing the mactomb file '${FILENAME}': "
+	if [[ ! "${FILENAME}" ]]; then
+		E_MESSAGE="You must specify a filename!"
+		return 1
+	fi
+
+	if [ -d "${FILENAME}" ]; then
+		E_MESSAGE+="file is a directory"
+		return 1
+	fi
+
+	if [ ! -e "${FILENAME}" ]; then
+		E_MESSAGE+="file not found."
+		return 1
+	fi
+
+	local tmp="/tmp/$RANDOM.$$.dmg"
+
+	s_echo "Decompressing...(you'll asked to insert a new passphrase: choose a new one or insert the old one)"
+	ret=$(${HDIUTIL} convert "${FILENAME}" -format UDRW -o "${tmp}" -encryption "$ENC" 2>&1)
+	if [[ "$ret" =~ "failed" || "$ret" =~ "error" || "$ret" =~ "canceled" ]]; then
+		E_MESSAGE+=$ret
+		return 1
+	fi
+
+	mv -f "$tmp" "${FILENAME}"
+	S_MESSAGE="Mactomb file '${FILENAME}' successfully decompressed!"
+	return 0
 }
 
 create() {
@@ -560,7 +593,7 @@ forge() {
 	return 1
 }
 
-COMMAND=('create', 'app', 'help', 'forge', 'resize', 'list', 'chpass', 'compress')
+COMMAND=('create', 'app', 'help', 'forge', 'resize', 'list', 'chpass', 'compress', 'decompress')
 HDIUTIL=/usr/bin/hdiutil
 # if 1, the script will use the Mac OS X notification method
 NOTIFICATION=0
