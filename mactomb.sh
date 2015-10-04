@@ -107,6 +107,7 @@ list() {
 		if [ ! "$imgpath" ]; then
 			break
 		fi
+
 		encrypted=$(/usr/libexec/PlistBuddy -c Print:images:$idx:image-encrypted $tempfile)
 		removable=$(/usr/libexec/PlistBuddy -c Print:images:$idx:removable $tempfile)
 		writeable=$(/usr/libexec/PlistBuddy -c Print:images:$idx:writeable $tempfile)
@@ -140,12 +141,12 @@ list() {
 
 		# assume that macbombs are encrypted, removable and writable
 		# it's too loose, but for now it's ok
-		if [[ "$encrypted" == "true" && "$removable" == "true" && "$writeable" == "true" ]]; then
+		if [[ "$encrypted" == "true" && "$removable" == "true" ]] && [[ "$writeable" == "true" || "$imgtype" =~ "compressed" ]]; then
 			echo "***************"
 			echo -e "${GREEN}Image Path$NO_COLOUR:\t$imgpath"
 			echo -e "${GREEN}Mount Point$NO_COLOUR:\t$mnt"
 			if [[ "$imgtype" =~ "compressed" ]]; then
-				compressed="Yes"
+				compressed="Yes ($imgtype)"
 			fi
 			echo -e "${GREEN}Compressed$NO_COLOUR:\t$compressed"
 			echo -e "${GREEN}${space_tot[0]}$NO_COLOUR:\t\t${space_tot[1]}"
