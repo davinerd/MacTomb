@@ -80,6 +80,18 @@ compression_banner() {
 		'''
 }
 
+decompression_banner() {
+	echo '''
+##################################################
+#                  WARNING                       #
+#                                                #
+#  Decompression will overwrites your compressed #
+#                  mactomb                       #
+#                                                #
+##################################################
+		'''
+}
+
 check_size() {
 	local dim=${SIZE:~0}
 	local size=${SIZE%?}
@@ -323,6 +335,8 @@ decompress() {
 		return 1
 	fi
 
+	decompression_banner
+
 	local tmp="/tmp/$RANDOM.$$.dmg"
 
 	s_echo "Decompressing...(you'll asked to insert a new passphrase: choose a new one or insert the old one)"
@@ -350,7 +364,7 @@ create() {
 		return 1
 	fi
 
-	if [ -e "${FILENAME}" ]; then
+	if [[ -e "${FILENAME}" || -e "${FILENAME}".dmg ]]; then
 		E_MESSAGE+="File arealdy exists!"
 		return 1
 	fi
@@ -615,7 +629,7 @@ OUTSCRIPT=""
 AUTOMATOR="template.app"
 # default volume name for HFS+. Change this if you don't like it
 VOLNAME="untitled"
-VERSION=1.1
+VERSION=1.2
 CMD=$1
 shift
 
