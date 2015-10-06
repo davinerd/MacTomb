@@ -1,6 +1,14 @@
 # MacTomb
 MacTomb is a kind of [Tomb](https://github.com/dyne/Tomb) porting for Mac OS X. It allows you to create encrypted DMG file (called `mactomb`), copy files and folders into it and setup a couple of scripts needed to easily mount & run apps that use files stored inside the mactomb.
 
+Read about MacTomb on [dyne](https://www.dyne.org/software/mactomb/) and [Lost in ICT blog](https://lostinict.wordpress.com/2015/09/27/mactomb-enhance-your-privacy-on-mac-os-x/)
+
+# What's new? (v.1.2)
+- compression/decompression support: mactomb is able to compress and decompress mactomb files. See the related section
+- `list` command: it will list all the open mactombs
+- change password: with `chpass` you can change your mactomb's password
+- bug fixes and improvements
+
 # What's new? (v.1.1)
 - changing flags (again!): now `-n` specify the name of the volume (the famous `$VOLNAME`) while `-v` enables Mac OS X notification
 - now the bash script umount the mactomb when closing the application. It means that when you close the Automatr App, the mactomb will be umounted
@@ -22,16 +30,29 @@ Version 1.0 released! Yes, from 0.1 to 1.0. Why? Big improvements has been made.
 The help is quite explicit:
 ```
 $ bash mactomb.sh help
-..:: MacTomb v.1.1 ::..
+..:: MacTomb v.1.2 ::..
 by Davide Barbato
 
 Help!
+
+list:
+   list all opened mactombs
+
+chpass:
+  -f <file>   Change passphrase of mactomb <file>
+
+compress:
+  -f <file>   Compress a mactomb <file> (will make it read-only)
+
+decompress:
+  -f <file>   Decompress a mactomb <file>
 
 create:
   -f <file>   File to create (the mactomb file)
   -s <size[m|g|t] Size of the file (m=mb, g=gb, t=tb)
   Optional:
     -p <profile>  Folder/file to copy into the newly created mactomb <file>
+    -c      Create a zlib compressed mactomb <file> (will make it read-only)
     -n <volname>  Specify the volume name to assign to the mactomb <file>
 
 app:
@@ -40,8 +61,7 @@ app:
   -b <output> The bash script used to launch the <app> inside the mactomb file <file>
 
 forge:
-  Will call both "create" and "app" if all flags are specified. Can be called on 
-  already created files, in this case skipping "create" and/or "app"
+  Will call both "create" and "app" if all flags are specified. Can be called on already created files, in this case skipping "create" and/or "app"
   Optional:
     -o <output> The Automator app used to launch the bash <output> script by Mac OS X
 ```
@@ -73,11 +93,23 @@ $ bash mactomb.sh forge -b ~/run.sh -o ~/runmy.app
 ```
 That command can be used even outside the mactomb concept: it can be used to create an Automator app that will call any bash script passed as `-b` argument.
 
+# Compression / Decompression
+New in version 1.2, you are now able to compress and decompress your mactomb.
+Compressing a mactomb will help you save some space: it uses zlib compression at the higest level (9). 
+
+**Please note that compressing a mactomb will make it read-only**
+
+While this can be seen as a disadvantage, it can be quite useful in the following scenarios:
+- you need to transfer a big mactomb and don't have much space/bandwith available
+- you need only to read the mactomb's content, so there is no need for writing support
+
+mactomb provides also a `decompress` command that decompress a compressed mactomb file, making it read-write
+
 # How to update
 If you have your original folder, move there and type `git pull`. If not, you'd do better to clone the repository or download the zip file.
 
 # Jiucy stuff
-Using the `-n` flag, you can have the final result printed as a Mac OS X notification.
+Using the `-v` flag, you can have the final result printed as a Mac OS X notification.
 
 # Technical details
 MacTomb uses `hdiutil` to create the encrypted DMG. The parameters are specified at the bottom of the script. As previously stated, it uses AES256 and by default `hdiutil` uses CBC mode. The file system is `HFS+`, the native and well supported one by Mac OS X.

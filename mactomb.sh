@@ -43,12 +43,19 @@ help() {
 	echo "Help!"
 	echo -e '''
 list:
-	list all opened mactombs\n
+   list all opened mactombs\n
+chpass:
+  -f <file>\t\tChange passphrase of mactomb <file>\n
+compress:
+  -f <file>\t\tCompress a mactomb <file> (will make it read-only)\n
+decompress:
+  -f <file>\t\tDecompress a mactomb <file>\n
 create:
   -f <file>\t\tFile to create (the mactomb file)
   -s <size[m|g|t]\tSize of the file (m=mb, g=gb, t=tb)
   Optional:
     -p <profile>\tFolder/file to copy into the newly created mactomb <file>
+    -c\t\t\tCreate a zlib compressed mactomb <file> (will make it read-only)
     -n <volname>\tSpecify the volume name to assign to the mactomb <file>\n
 app:
   -f <file>\tEncrypted DMG to use as mactomb file (already created)
@@ -60,6 +67,29 @@ forge:
     -o <output>\tThe Automator app used to launch the bash <output> script by Mac OS X
 	'''
 	return 2
+}
+
+compression_banner() {
+	echo '''
+##################################################
+#                  WARNING                       #
+#                                                #
+#  Compression will make the mactomb read-only   #
+#                                                #
+##################################################
+		'''
+}
+
+decompression_banner() {
+	echo '''
+##################################################
+#                  WARNING                       #
+#                                                #
+#  Decompression will overwrites your compressed #
+#                  mactomb                       #
+#                                                #
+##################################################
+		'''
 }
 
 check_size() {
@@ -98,14 +128,17 @@ list() {
 
 	local -i idx=0
 	local -i cnt=0
+	local compressed="No"
 	while True; do
 		imgpath=$(/usr/libexec/PlistBuddy -c Print:images:$idx:image-path $tempfile 2>/dev/null)
 		if [ ! "$imgpath" ]; then
 			break
 		fi
+
 		encrypted=$(/usr/libexec/PlistBuddy -c Print:images:$idx:image-encrypted $tempfile)
 		removable=$(/usr/libexec/PlistBuddy -c Print:images:$idx:removable $tempfile)
 		writeable=$(/usr/libexec/PlistBuddy -c Print:images:$idx:writeable $tempfile)
+		imgtype=$(/usr/libexec/PlistBuddy -c Print:images:$idx:image-type $tempfile)
 		oid=$(/usr/libexec/PlistBuddy -c Print:images:$idx:owner-uid $tempfile)
 
 		local out=$(dscl . -search /Users UniqueID $oid)
@@ -135,10 +168,14 @@ list() {
 
 		# assume that macbombs are encrypted, removable and writable
 		# it's too loose, but for now it's ok
-		if [[ "$encrypted" == "true" && "$removable" == "true" && "$writeable" == "true" ]]; then
+		if [[ "$encrypted" == "true" && "$removable" == "true" ]] && [[ "$writeable" == "true" || "$imgtype" =~ "compressed" ]]; then
 			echo "***************"
 			echo -e "${GREEN}Image Path$NO_COLOUR:\t$imgpath"
 			echo -e "${GREEN}Mount Point$NO_COLOUR:\t$mnt"
+			if [[ "$imgtype" =~ "compressed" ]]; then
+				compressed="Yes ($imgtype)"
+			fi
+			echo -e "${GREEN}Compressed$NO_COLOUR:\t$compressed"
 			echo -e "${GREEN}${space_tot[0]}$NO_COLOUR:\t\t${space_tot[1]}"
 			echo -e "${GREEN}${used[0]}$NO_COLOUR:\t\t${used[1]}"
 			echo -e "${GREEN}${avail[0]}$NO_COLOUR:\t\t${avail[1]}"
@@ -163,6 +200,34 @@ list() {
 	else
 		S_MESSAGE="There are no mactombs opened"
 	fi
+	return 0
+}
+
+chpass() {
+	E_MESSAGE="Cannot change passphrase: "
+
+	if [ ! "${FILENAME}" ]; then
+		E_MESSAGE="Please specify the filename (-f)"
+		return 1
+	fi
+
+	if [ ! -e "${FILENAME}" ]; then
+		E_MESSAGE+="'${FILENAME}' not found."
+		return 1
+	fi
+
+	if [ -d "${FILENAME}" ]; then
+		E_MESSAGE+="'${FILENAME}' is a directory."
+		return 1
+	fi
+
+	${HDIUTIL} chpass "${FILENAME}"
+	if [ "$?" -eq 1 ]; then
+		E_MESSAGE+="something went wrong!"
+		return 1
+	fi
+
+	S_MESSAGE="Successfully changed your passphrase!"
 	return 0
 }
 
@@ -219,6 +284,73 @@ resize() {
 	return 0
 }
 
+compress() {
+	E_MESSAGE="Failed compressing the mactomb file '${FILENAME}': "
+	if [[ ! "${FILENAME}" ]]; then
+		E_MESSAGE="You must specify a filename!"
+		return 1
+	fi
+
+	if [ -d "${FILENAME}" ]; then
+		E_MESSAGE+="file is a directory"
+		return 1
+	fi
+
+	if [ ! -e "${FILENAME}" ]; then
+		E_MESSAGE+="file not found."
+		return 1
+	fi
+
+	compression_banner
+
+	local tmp="/tmp/$RANDOM.$$.dmg"
+
+	s_echo "Compressing...(you'll asked to insert a new passphrase: choose a new one or insert the old one)"
+	ret=$(${HDIUTIL} convert "${FILENAME}" -format $CFORMAT -imagekey zlib-level=$CLEVEL -o "${tmp}" -encryption "$ENC" 2>&1)
+	if [[ "$ret" =~ "failed" || "$ret" =~ "error" || "$ret" =~ "canceled" ]]; then
+		E_MESSAGE+=$ret
+		return 1
+	fi
+
+	mv -f "$tmp" "${FILENAME}"
+	S_MESSAGE="Mactomb file '${FILENAME}' successfully compressed!"
+	return 0
+
+}
+
+decompress() {
+	E_MESSAGE="Failed decompressing the mactomb file '${FILENAME}': "
+	if [[ ! "${FILENAME}" ]]; then
+		E_MESSAGE="You must specify a filename!"
+		return 1
+	fi
+
+	if [ -d "${FILENAME}" ]; then
+		E_MESSAGE+="file is a directory"
+		return 1
+	fi
+
+	if [ ! -e "${FILENAME}" ]; then
+		E_MESSAGE+="file not found."
+		return 1
+	fi
+
+	decompression_banner
+
+	local tmp="/tmp/$RANDOM.$$.dmg"
+
+	s_echo "Decompressing...(you'll asked to insert a new passphrase: choose a new one or insert the old one)"
+	ret=$(${HDIUTIL} convert "${FILENAME}" -format UDRW -o "${tmp}" -encryption "$ENC" 2>&1)
+	if [[ "$ret" =~ "failed" || "$ret" =~ "error" || "$ret" =~ "canceled" ]]; then
+		E_MESSAGE+=$ret
+		return 1
+	fi
+
+	mv -f "$tmp" "${FILENAME}"
+	S_MESSAGE="Mactomb file '${FILENAME}' successfully decompressed!"
+	return 0
+}
+
 create() {
 	E_MESSAGE="Failed creating the mactomb file '${FILENAME}': "
 
@@ -232,7 +364,7 @@ create() {
 		return 1
 	fi
 
-	if [ -e "${FILENAME}" ]; then
+	if [[ -e "${FILENAME}" || -e "${FILENAME}".dmg ]]; then
 		E_MESSAGE+="File arealdy exists!"
 		return 1
 	fi
@@ -243,24 +375,41 @@ create() {
 		return 1
 	fi
 
-	local r=$(${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname $VOLNAME 2>&1)
+	local ret
 
-	if [[ "$r" =~ "failed" || "$r" =~ "error" || "$r" =~ "canceled" ]]; then
-		E_MESSAGE+=$r
+	ret=$(mount | grep "$VOLNAME")
+
+	if [[ "$ret" ]]; then
+		E_MESSAGE="Volume name '$VOLNAME' already used. Please pick up a different name (-n) or unmount it"
 		return 1
 	fi
-
-	# ensure FILENAME ends in dmg
-	if [[ "${FILENAME##*.}" != "dmg" ]]; then
-		FILENAME+=".dmg"
-	fi	
-
-	s_echo "mactomb file '${FILENAME}' successfully created!"
 	
-	if [[ "$PROFILE" ]]; then
+	# this can be quite huge block to read but I was not able to find a more elegant solution
+
+	if [[ "${COMPRESS}" -eq 1 && "${PROFILE}" ]]; then
+
+		compression_banner
+		
+		s_echo "Creating, copying and compressing the mactomb..."
+		ret=$(${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname $VOLNAME \
+			-format $CFORMAT -imagekey zlib-level=$CLEVEL -srcfolder ${PROFILE} 2>&1)
+		if [[ "$ret" =~ "failed" || "$ret" =~ "error" || "$ret" =~ "canceled" ]]; then
+			E_MESSAGE+=$ret
+			return 1
+		fi
+		S_MESSAGE="mactomb file '${FILENAME}' successfully created!"
+	elif [[ "${COMPRESS}" -eq 0 && "${PROFILE}" ]]; then
+		s_echo "Creating the mactomb..."
+		ret=$(${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname $VOLNAME -attach 2>&1)
+		if [[ "$ret" =~ "failed" || "$ret" =~ "error" || "$ret" =~ "canceled" ]]; then
+			E_MESSAGE+=$ret
+			return 1
+		fi
+		
+		s_echo "mactomb file '${FILENAME}' successfully created!"
 		echo -e "\nCopying profile file(s) into the mactomb..."
 
-		r=$(${HDIUTIL} attach "${FILENAME}")
+		#ret=$(${HDIUTIL} attach "${FILENAME}")
 
 		local abs_vol_path="/Volumes/$VOLNAME"
 		# enforce a check - don't trust hdiutil
@@ -283,10 +432,43 @@ create() {
 			E_MESSAGE="Problem mounting the mactomb file, file(s) not copied."
 			return 1
 		fi
+		S_MESSAGE="Enjoy your mactomb"
+	elif [[ ! "${PROFILE}" && "${COMPRESS}" -eq 1 ]]; then
+
+		compression_banner
+
+		# problem is: if you specify -format UDZO, hdiutil requires -srcfolder to be set
+		# so we need to create a temp tomb and then compress (hdiutil convert)
+		local tmp="/tmp/$RANDOM.$$.dmg"
+
+		# since 'convert' doesn't preserve encryption, let's create a normal container
+		# that will be encrypted by 'convert'
+		ret=$(${HDIUTIL} create "$tmp" -size "$SIZE" -fs "$FS" -nospotlight -volname $VOLNAME 2>&1)
+		if [[ "$ret" =~ "failed" || "$ret" =~ "error" || "$ret" =~ "canceled" ]]; then
+			rm -rf "${tmp}"
+			E_MESSAGE+=$ret
+			return 1
+		fi
+
+		ret=$(${HDIUTIL} convert "$tmp" -format $CFORMAT -imagekey zlib-level=$CLEVEL -o "${FILENAME}" -encryption "$ENC" 2>&1)
+		if [[ "$ret" =~ "failed" || "$ret" =~ "error" || "$ret" =~ "canceled" ]]; then
+			rm -rf "${tmp}"
+			E_MESSAGE+=$ret
+			return 1
+		fi
+
+		# removing the temp file
+		rm -rf "${tmp}"
+		S_MESSAGE="mactomb file '${FILENAME}' successfully created!"
+	else
+		ret=$(${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname $VOLNAME 2>&1)
+		if [[ "$ret" =~ "failed" || "$ret" =~ "error" || "$ret" =~ "canceled" ]]; then
+			E_MESSAGE+=$ret
+			return 1
+		fi
+		S_MESSAGE="mactomb file '${FILENAME}' successfully created!"
 	fi
-
-	S_MESSAGE="Enjoy your mactomb"
-
+	
 	return 0
 }
 
@@ -425,12 +607,18 @@ forge() {
 	return 1
 }
 
-COMMAND=('create', 'app', 'help', 'forge', 'resize', 'list')
+COMMAND=('create', 'app', 'help', 'forge', 'resize', 'list', 'chpass', 'compress', 'decompress')
 HDIUTIL=/usr/bin/hdiutil
 # if 1, the script will use the Mac OS X notification method
 NOTIFICATION=0
 ENC="AES-256"
 FS="HFS+"
+# compression? 
+COMPRESS=0
+# compression format (should be the default)
+CFORMAT="UDZO"
+# zlib compression level (9 = highest)
+CLEVEL=9
 # path to the app used for the script
 APPCMD=""
 # output script for automatically call the app defined in APPCMD
@@ -441,11 +629,11 @@ OUTSCRIPT=""
 AUTOMATOR="template.app"
 # default volume name for HFS+. Change this if you don't like it
 VOLNAME="untitled"
-VERSION=1.1
+VERSION=1.2
 CMD=$1
 shift
 
-while getopts "a:f:s:p:o:b:n:hv" opt; do
+while getopts "a:f:s:p:o:b:n:hvc" opt; do
 	case "${opt}" in
 		f)
 			FILENAME=$OPTARG;;
@@ -455,6 +643,8 @@ while getopts "a:f:s:p:o:b:n:hv" opt; do
 			VOLNAME=$OPTARG;;
 		a)
 			APPCMD=$OPTARG;;
+		c)
+			COMPRESS=1;;
 		p)
 			PROFILE=$OPTARG;;
 		b)
@@ -464,7 +654,9 @@ while getopts "a:f:s:p:o:b:n:hv" opt; do
 		v)
 			NOTIFICATION=1;;
 		\?)
-			e_echo "Invalid option: -$OPTARG" >&2;;
+			usage
+			exit 1
+			;;
 	esac
 done
 
