@@ -50,6 +50,9 @@ compress:
   -f <file>\t\tCompress a mactomb <file> (will make it read-only)\n
 decompress:
   -f <file>\t\tDecompress a mactomb <file>\n
+rename:
+  -f <file>\tmactomb file (already created)
+  -n <volname>\tSpecify the new volume name to assign to the mactomb <file>\n
 create:
   -f <file>\t\tFile to create (the mactomb file)
   -s <size[m|g|t]\tSize of the file (m=mb, g=gb, t=tb)
@@ -147,9 +150,9 @@ list() {
 		local -i j=0
 		while True; do
 			mountpoint=$(/usr/libexec/PlistBuddy -c Print:images:$idx:system-entities:$j $tempfile 2>/dev/null)
-			# we can skip the while loop since it means there are no system-entities left
-			# then it doesn't contain the mount-point for sure 
 			if [ ! "$mountpoint" ]; then
+				# we can skip the while loop since it means there are no system-entities left
+				# then it doesn't contain the mount-point for sure 
 				break
 			fi
 
@@ -203,6 +206,7 @@ list() {
 	return 0
 }
 
+# this function can be used even for not-encrypted DMG
 chpass() {
 	E_MESSAGE="Cannot change passphrase: "
 
@@ -231,6 +235,73 @@ chpass() {
 	return 0
 }
 
+# this function can be used even for not-encrypted DMG
+rename() {
+	E_MESSAGE="Cannot rename '$FILENAME': "
+	if [[ ! "${FILENAME}" || ! "${VOLNAME}" ]]; then
+		E_MESSAGE="Please specify the filename (-f) and the new volume name (-n)"
+		return 1
+	fi
+
+	if [ ! -e "${FILENAME}" ]; then
+		E_MESSAGE+="file not found."
+		return 1
+	fi
+
+	local ret disk oldlabel
+	# if the mactomb is already mounted we don't want to unmount it
+	local already_mounted=$(${HDIUTIL} info | grep "$FILENAME")
+
+	# a quick check to avoid going through the process of renameing a compressed mactomb
+	# if the mactomb is mounted, this check fails.
+	if [ ! "${already_mounted}" ]; then
+		ret=$(${HDIUTIL} imageinfo "${FILENAME}" | grep "Compressed:")
+		if [[ "$ret" =~ "true" ]]; then
+			E_MESSAGE+="compressed mactombs are read-only"
+			return 1
+		fi
+	fi
+
+	ret=$(${HDIUTIL} attach "${FILENAME}" 2>&1)
+	if [[ "$ret" =~ "failed" || "$ret" =~ "error" || "$ret" =~ "canceled" ]]; then
+		E_MESSAGE+=$ret
+		return 1
+	fi
+	
+	disk=$(grep Volumes <<< "$ret" | awk -F ' ' '{print $1}')
+	oldlabel=$(grep Volumes <<< "$ret" | awk -F ' ' '{print $3}')
+	oldlabel=$(basename $oldlabel)
+	
+	if [[ "$oldlabel" == "$VOLNAME" ]]; then
+		if [ ! "$already_mounted" ]; then
+			${HDIUTIL} detach "$disk" &> /dev/null
+		fi
+		E_MESSAGE+="same label"
+		return 1
+	fi
+
+	s_echo "Renaming '$oldlabel' to '$VOLNAME'"
+	ret=$(/usr/sbin/diskutil rename "${disk}" "${VOLNAME}" 2>&1)
+
+	S_MESSAGE="Successfully renamed your mactomb!"
+
+	if [ ! "$already_mounted" ]; then
+		# we don't want to let it sits open on your system!
+		${HDIUTIL} detach "$disk" &> /dev/null
+	else
+		S_MESSAGE+=" Remount the mactomb to make it effective"
+	fi
+
+	# this can happens if your mactomb is compressed and already mounted
+	if [[ "$ret" =~ "Failed to rename volume" ]]; then
+		E_MESSAGE+=$ret
+		return 1
+	fi
+	
+	return 0
+}
+
+# this function can be used even for not-encrypted DMG
 resize() {
 	E_MESSAGE="Cannot resize '$FILENAME': "
 	if [[ ! "${FILENAME}" || ! "${SIZE}" ]]; then
@@ -408,8 +479,6 @@ create() {
 		
 		s_echo "mactomb file '${FILENAME}' successfully created!"
 		echo -e "\nCopying profile file(s) into the mactomb..."
-
-		#ret=$(${HDIUTIL} attach "${FILENAME}")
 
 		local abs_vol_path="/Volumes/$VOLNAME"
 		# enforce a check - don't trust hdiutil
@@ -607,7 +676,7 @@ forge() {
 	return 1
 }
 
-COMMAND=('create', 'app', 'help', 'forge', 'resize', 'list', 'chpass', 'compress', 'decompress')
+COMMAND=('create', 'app', 'help', 'forge', 'resize', 'list', 'chpass', 'compress', 'decompress', 'rename')
 HDIUTIL=/usr/bin/hdiutil
 # if 1, the script will use the Mac OS X notification method
 NOTIFICATION=0
