@@ -53,7 +53,8 @@ decompress:
 rename:
   -f <file>\t\tmactomb file (already created)
   Optional:
-    -n <volname>\tSpecify the new volume name to assign to the mactomb <file> (default is "untitled")\n
+    -n <volname>\tSpecify the new volume name to assign to the mactomb <file> (default is "untitled")
+    -b <script>\tThe bash script in which replaces all the occurence of the old volum name with the new one\n
 create:
   -f <file>\t\tFile to create (the mactomb file)
   -s <size[m|g|t]\tSize of the file (m=mb, g=gb, t=tb)
@@ -64,11 +65,11 @@ create:
 app:
   -f <file>\tEncrypted DMG to use as mactomb file (already created)
   -a <app>\tBinary and arguments of the app you want to use inside the mactomb file
-  -b <output>\tThe bash script used to launch the <app> inside the mactomb file <file>\n
+  -b <script>\tThe bash script used to launch the <app> inside the mactomb file <file>\n
 forge:
   Will call both "create" and "app" if all flags are specified. Can be called on \n  already created files, in this case skipping "create" and/or "app"
   Optional:
-    -o <output>\tThe Automator app used to launch the bash <output> script by Mac OS X
+    -o <app>\tThe Automator app used to launch the bash <output> script by Mac OS X
 	'''
 	return 2
 }
@@ -258,6 +259,7 @@ rename() {
 	# a quick check to avoid going through the process of renameing a compressed mactomb.
 	# if the mactomb is mounted, this check fails.
 	if [ ! "${already_mounted}" ]; then
+		s_echo "Getting information..."
 		ret=$(${HDIUTIL} imageinfo "${FILENAME}" 2>&1 | grep "Compressed:")
 		if [[ "$ret" =~ "true" ]]; then
 			E_MESSAGE+="compressed mactombs are read-only"
@@ -265,16 +267,18 @@ rename() {
 		fi
 	fi
 
+	s_echo "Renaming to '$VOLNAME'"
+	# if already attached we don't care, hdiutil is smart enough
 	ret=$(${HDIUTIL} attach "${FILENAME}" 2>&1)
 	if [[ "$ret" =~ "attach failed" ]]; then
 		E_MESSAGE+=$ret
 		return 1
 	fi
-	
+
 	disk=$(grep Volumes <<< "$ret" | awk -F ' ' '{print $1}')
 	oldlabel=$(grep Volumes <<< "$ret" | awk -F ' ' '{print $3}')
 	oldlabel=$(basename $oldlabel)
-	
+
 	if [[ "$oldlabel" == "$VOLNAME" ]]; then
 		if [ ! "$already_mounted" ]; then
 			${HDIUTIL} detach "$disk" &> /dev/null
@@ -282,8 +286,7 @@ rename() {
 		E_MESSAGE+="same label"
 		return 1
 	fi
-
-	s_echo "Renaming '$oldlabel' to '$VOLNAME'"
+	
 	ret=$(/usr/sbin/diskutil rename "${disk}" "${VOLNAME}" 2>&1)
 
 	S_MESSAGE="Successfully renamed your mactomb!"
@@ -298,7 +301,16 @@ rename() {
 		E_MESSAGE+=$ret
 		return 1
 	fi
-	
+
+	if [ "$BASHSCRIPT" ]; then
+		if [ ! -w "$BASHSCRIPT" ]; then
+			e_echo "'$BASHSCRIPT' does not exist or you don't have write permission! Not editing"
+		else
+			# yes: it will automatically replace all the occurence of $oldlabel with $VOLNAME
+			sed -i '' -e "s@$oldlabel@$VOLNAME@" "${BASHSCRIPT}"
+		fi
+	fi
+
 	return 0
 }
 

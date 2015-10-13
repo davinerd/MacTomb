@@ -4,7 +4,7 @@ MacTomb is a kind of [Tomb](https://github.com/dyne/Tomb) porting for Mac OS X. 
 Read about MacTomb on [dyne](https://www.dyne.org/software/mactomb/) and [Lost in ICT blog](https://lostinict.wordpress.com/2015/09/27/mactomb-enhance-your-privacy-on-mac-os-x/)
 
 # What's new? (v.1.3)
-- added `rename` command: you can now change your volume label within `mactomb`
+- added `rename` command: you can now change your volume label within `mactomb` and by specify the flag `-b` also in the bash script (**N.B.** you may need to replace the volume label in other files like, in example, Firefox or Thunderbird profiles)
 - more robust checks to ensure everything works fine
 
 # What's new? (v.1.2)
@@ -55,6 +55,7 @@ rename:
   -f <file>       mactomb file (already created)
   Optional:
     -n <volname>  Specify the new volume name to assign to the mactomb <file> (default is "untitled")
+    -b <script>\tThe bash script in which replaces all the occurence of the old volum name with the new one
 
 create:
   -f <file>        File to create (the mactomb file)
