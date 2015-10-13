@@ -51,8 +51,9 @@ compress:
 decompress:
   -f <file>\t\tDecompress a mactomb <file>\n
 rename:
-  -f <file>\tmactomb file (already created)
-  -n <volname>\tSpecify the new volume name to assign to the mactomb <file>\n
+  -f <file>\t\tmactomb file (already created)
+  Optional:
+    -n <volname>\tSpecify the new volume name to assign to the mactomb <file> (default is "untitled")\n
 create:
   -f <file>\t\tFile to create (the mactomb file)
   -s <size[m|g|t]\tSize of the file (m=mb, g=gb, t=tb)
@@ -123,7 +124,7 @@ list() {
 	local mountpoint mnt space_tot used avail perc oid
 
 	if [ ! -x "$PLISTBUDDY" ]; then
-		E_MESSAGE="PlistBuddy not found in $PLISTBUDDY. Maybe is on a different path or not installed?"
+		E_MESSAGE="PlistBuddy not found in $PLISTBUDDY. Maybe it's on a different path or not installed?"
 		return 1
 	fi
 
@@ -170,7 +171,7 @@ list() {
 			j+=1
 		done
 
-		# assume that macbombs are encrypted, removable and writable
+		# assume that macbombs are encrypted, removable and writable.
 		# it's too loose, but for now it's ok
 		if [[ "$encrypted" == "true" && "$removable" == "true" ]] && [[ "$writeable" == "true" || "$imgtype" =~ "compressed" ]]; then
 			echo "***************"
@@ -226,9 +227,9 @@ chpass() {
 		return 1
 	fi
 
-	${HDIUTIL} chpass "${FILENAME}"
-	if [ "$?" -eq 1 ]; then
-		E_MESSAGE+="something went wrong!"
+	local ret=$(${HDIUTIL} chpass "${FILENAME}" 2>&1)
+	if [[ "$ret" =~ "chpass failed" ]]; then
+		E_MESSAGE+="$ret"
 		return 1
 	fi
 
@@ -239,8 +240,8 @@ chpass() {
 # this function can be used even for not-encrypted DMG
 rename() {
 	E_MESSAGE="Cannot rename '$FILENAME': "
-	if [[ ! "${FILENAME}" || ! "${VOLNAME}" ]]; then
-		E_MESSAGE="Please specify the filename (-f) and the new volume name (-n)"
+	if [ ! "${FILENAME}" ]; then
+		E_MESSAGE="Please specify the filename (-f)"
 		return 1
 	fi
 
@@ -251,9 +252,10 @@ rename() {
 
 	local ret disk oldlabel
 	# if the mactomb is already mounted we don't want to unmount it
+	# at the end of the renaming process
 	local already_mounted=$(${HDIUTIL} info | grep "$FILENAME")
 
-	# a quick check to avoid going through the process of renameing a compressed mactomb
+	# a quick check to avoid going through the process of renameing a compressed mactomb.
 	# if the mactomb is mounted, this check fails.
 	if [ ! "${already_mounted}" ]; then
 		ret=$(${HDIUTIL} imageinfo "${FILENAME}" 2>&1 | grep "Compressed:")
@@ -461,7 +463,7 @@ create() {
 		compression_banner
 		
 		s_echo "Creating, copying and compressing the mactomb..."
-		ret=$(${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname $VOLNAME \
+		ret=$(${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname "$VOLNAME" \
 			-format $CFORMAT -imagekey zlib-level=$CLEVEL -srcfolder ${PROFILE} 2>&1)
 		if [[ "$ret" =~ "create failed" || "$ret" =~ "create canceled" ]]; then
 			E_MESSAGE+=$ret
@@ -470,7 +472,7 @@ create() {
 		S_MESSAGE="mactomb file '${FILENAME}' successfully created!"
 	elif [[ "${COMPRESS}" -eq 0 && "${PROFILE}" ]]; then
 		s_echo "Creating the mactomb..."
-		ret=$(${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname $VOLNAME -attach 2>&1)
+		ret=$(${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname "$VOLNAME" -attach 2>&1)
 		if [[ "$ret" =~ "create failed" || "$ret" =~ "attach failed" || "$ret" =~ "create canceled" ]]; then
 			E_MESSAGE+=$ret
 			return 1
@@ -505,13 +507,13 @@ create() {
 
 		compression_banner
 
-		# problem is: if you specify -format UDZO, hdiutil requires -srcfolder to be set
+		# problem is: if you specify -format UDZO, hdiutil requires -srcfolder to be set.
 		# so we need to create a temp tomb and then compress (hdiutil convert)
 		local tmp="/tmp/$RANDOM$RANDOM.dmg"
 
 		# since 'convert' doesn't preserve encryption, let's create a normal container
 		# that will be encrypted by 'convert'
-		ret=$(${HDIUTIL} create "$tmp" -size "$SIZE" -fs "$FS" -nospotlight -volname $VOLNAME 2>&1)
+		ret=$(${HDIUTIL} create "$tmp" -size "$SIZE" -fs "$FS" -nospotlight -volname "$VOLNAME" 2>&1)
 		if [[ "$ret" =~ "create failed" || "$ret" =~ "create canceled" ]]; then
 			rm -rf "${tmp}"
 			E_MESSAGE+=$ret
@@ -529,7 +531,7 @@ create() {
 		rm -rf "${tmp}"
 		S_MESSAGE="mactomb file '${FILENAME}' successfully created!"
 	else
-		ret=$(${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname $VOLNAME 2>&1)
+		ret=$(${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname "$VOLNAME" 2>&1)
 		if [[ "$ret" =~ "create failed" || "$ret" =~ "create canceled" ]]; then
 			E_MESSAGE+=$ret
 			return 1
@@ -697,7 +699,7 @@ OUTSCRIPT=""
 AUTOMATOR="template.app"
 # default volume name for HFS+. Change this if you don't like it
 VOLNAME="untitled"
-VERSION=1.2
+VERSION=1.3
 CMD=$1
 shift
 
