@@ -50,6 +50,10 @@ compress:
   -f <file>\t\tCompress a mactomb <file> (will make it read-only)\n
 decompress:
   -f <file>\t\tDecompress a mactomb <file>\n
+rename:
+  -f <file>\t\tmactomb file (already created)
+  Optional:
+    -n <volname>\tSpecify the new volume name to assign to the mactomb <file> (default is "untitled")\n
 create:
   -f <file>\t\tFile to create (the mactomb file)
   -s <size[m|g|t]\tSize of the file (m=mb, g=gb, t=tb)
@@ -105,6 +109,7 @@ check_size() {
 }
 
 list() {
+	local PLISTBUDDY="/usr/libexec/PlistBuddy"
 	# colours! even if I don't need all of them...colours!
 	local BLUE="\x1b[0;34m"
 	local RED="\x1b[0;31m"
@@ -118,8 +123,8 @@ list() {
 	local NO_COLOUR="\x1b[0m"
 	local mountpoint mnt space_tot used avail perc oid
 
-	if [ ! -e '/usr/libexec/PlistBuddy' ] || [ ! -x '/usr/libexec/PlistBuddy' ]; then
-		E_MESSAGE="/usr/libexec/PlistBuddy not found. Maybe is on a different path or not installed?"
+	if [ ! -x "$PLISTBUDDY" ]; then
+		E_MESSAGE="PlistBuddy not found in $PLISTBUDDY. Maybe it's on a different path or not installed?"
 		return 1
 	fi
 
@@ -130,30 +135,30 @@ list() {
 	local -i cnt=0
 	local compressed="No"
 	while True; do
-		imgpath=$(/usr/libexec/PlistBuddy -c Print:images:$idx:image-path $tempfile 2>/dev/null)
+		imgpath=$(${PLISTBUDDY} -c Print:images:$idx:image-path $tempfile 2>/dev/null)
 		if [ ! "$imgpath" ]; then
 			break
 		fi
 
-		encrypted=$(/usr/libexec/PlistBuddy -c Print:images:$idx:image-encrypted $tempfile)
-		removable=$(/usr/libexec/PlistBuddy -c Print:images:$idx:removable $tempfile)
-		writeable=$(/usr/libexec/PlistBuddy -c Print:images:$idx:writeable $tempfile)
-		imgtype=$(/usr/libexec/PlistBuddy -c Print:images:$idx:image-type $tempfile)
-		oid=$(/usr/libexec/PlistBuddy -c Print:images:$idx:owner-uid $tempfile)
+		encrypted=$(${PLISTBUDDY} -c Print:images:$idx:image-encrypted $tempfile)
+		removable=$(${PLISTBUDDY} -c Print:images:$idx:removable $tempfile)
+		writeable=$(${PLISTBUDDY} -c Print:images:$idx:writeable $tempfile)
+		imgtype=$(${PLISTBUDDY} -c Print:images:$idx:image-type $tempfile)
+		oid=$(${PLISTBUDDY} -c Print:images:$idx:owner-uid $tempfile)
 
 		local out=$(dscl . -search /Users UniqueID $oid)
 		local owner=$(cut -d ' ' -f1 <<< $out)
 
 		local -i j=0
 		while True; do
-			mountpoint=$(/usr/libexec/PlistBuddy -c Print:images:$idx:system-entities:$j $tempfile 2>/dev/null)
-			# we can skip the while loop since it means there are no system-entities left
-			# then it doesn't contain the mount-point for sure 
+			mountpoint=$(${PLISTBUDDY} -c Print:images:$idx:system-entities:$j $tempfile 2>/dev/null)
 			if [ ! "$mountpoint" ]; then
+				# we can skip the while loop since it means there are no system-entities left
+				# then it doesn't contain the mount-point for sure 
 				break
 			fi
 
-			mountpoint=$(/usr/libexec/PlistBuddy -c Print:images:$idx:system-entities:$j:mount-point $tempfile 2>/dev/null)
+			mountpoint=$(${PLISTBUDDY} -c Print:images:$idx:system-entities:$j:mount-point $tempfile 2>/dev/null)
 			# mount-point is not mandatory inside system-entities
 			if [ "$mountpoint" ]; then
 				read -ra space_tot -d ''<<< $(df -h "$mountpoint" | awk -F ' ' '{print $2}')
@@ -166,7 +171,7 @@ list() {
 			j+=1
 		done
 
-		# assume that macbombs are encrypted, removable and writable
+		# assume that macbombs are encrypted, removable and writable.
 		# it's too loose, but for now it's ok
 		if [[ "$encrypted" == "true" && "$removable" == "true" ]] && [[ "$writeable" == "true" || "$imgtype" =~ "compressed" ]]; then
 			echo "***************"
@@ -203,6 +208,7 @@ list() {
 	return 0
 }
 
+# this function can be used even for not-encrypted DMG
 chpass() {
 	E_MESSAGE="Cannot change passphrase: "
 
@@ -221,9 +227,9 @@ chpass() {
 		return 1
 	fi
 
-	${HDIUTIL} chpass "${FILENAME}"
-	if [ "$?" -eq 1 ]; then
-		E_MESSAGE+="something went wrong!"
+	local ret=$(${HDIUTIL} chpass "${FILENAME}" 2>&1)
+	if [[ "$ret" =~ "chpass failed" ]]; then
+		E_MESSAGE+="$ret"
 		return 1
 	fi
 
@@ -231,6 +237,72 @@ chpass() {
 	return 0
 }
 
+# this function can be used even for not-encrypted DMG
+rename() {
+	E_MESSAGE="Cannot rename '$FILENAME': "
+	if [ ! "${FILENAME}" ]; then
+		E_MESSAGE="Please specify the filename (-f)"
+		return 1
+	fi
+
+	if [ ! -e "${FILENAME}" ]; then
+		E_MESSAGE+="file not found."
+		return 1
+	fi
+
+	local ret disk oldlabel
+	# if the mactomb is already mounted we don't want to unmount it
+	# at the end of the renaming process
+	local already_mounted=$(${HDIUTIL} info | grep "$FILENAME")
+
+	# a quick check to avoid going through the process of renameing a compressed mactomb.
+	# if the mactomb is mounted, this check fails.
+	if [ ! "${already_mounted}" ]; then
+		ret=$(${HDIUTIL} imageinfo "${FILENAME}" 2>&1 | grep "Compressed:")
+		if [[ "$ret" =~ "true" ]]; then
+			E_MESSAGE+="compressed mactombs are read-only"
+			return 1
+		fi
+	fi
+
+	ret=$(${HDIUTIL} attach "${FILENAME}" 2>&1)
+	if [[ "$ret" =~ "attach failed" ]]; then
+		E_MESSAGE+=$ret
+		return 1
+	fi
+	
+	disk=$(grep Volumes <<< "$ret" | awk -F ' ' '{print $1}')
+	oldlabel=$(grep Volumes <<< "$ret" | awk -F ' ' '{print $3}')
+	oldlabel=$(basename $oldlabel)
+	
+	if [[ "$oldlabel" == "$VOLNAME" ]]; then
+		if [ ! "$already_mounted" ]; then
+			${HDIUTIL} detach "$disk" &> /dev/null
+		fi
+		E_MESSAGE+="same label"
+		return 1
+	fi
+
+	s_echo "Renaming '$oldlabel' to '$VOLNAME'"
+	ret=$(/usr/sbin/diskutil rename "${disk}" "${VOLNAME}" 2>&1)
+
+	S_MESSAGE="Successfully renamed your mactomb!"
+
+	if [ ! "$already_mounted" ]; then
+		# we don't want to let it sits open on your system!
+		${HDIUTIL} detach "$disk" &> /dev/null
+	fi
+
+	# this can happens if your mactomb is compressed and already mounted
+	if [[ "$ret" =~ "Failed to rename volume" ]]; then
+		E_MESSAGE+=$ret
+		return 1
+	fi
+	
+	return 0
+}
+
+# this function can be used even for not-encrypted DMG
 resize() {
 	E_MESSAGE="Cannot resize '$FILENAME': "
 	if [[ ! "${FILENAME}" || ! "${SIZE}" ]]; then
@@ -303,11 +375,11 @@ compress() {
 
 	compression_banner
 
-	local tmp="/tmp/$RANDOM.$$.dmg"
+	local tmp="/tmp/$RANDOM$RANDOM.dmg"
 
 	s_echo "Compressing...(you'll asked to insert a new passphrase: choose a new one or insert the old one)"
 	ret=$(${HDIUTIL} convert "${FILENAME}" -format $CFORMAT -imagekey zlib-level=$CLEVEL -o "${tmp}" -encryption "$ENC" 2>&1)
-	if [[ "$ret" =~ "failed" || "$ret" =~ "error" || "$ret" =~ "canceled" ]]; then
+	if [[ "$ret" =~ "convert failed" || "$ret" =~ "convert canceled" ]]; then
 		E_MESSAGE+=$ret
 		return 1
 	fi
@@ -337,11 +409,11 @@ decompress() {
 
 	decompression_banner
 
-	local tmp="/tmp/$RANDOM.$$.dmg"
+	local tmp="/tmp/$RANDOM$RANDOM.dmg"
 
 	s_echo "Decompressing...(you'll asked to insert a new passphrase: choose a new one or insert the old one)"
 	ret=$(${HDIUTIL} convert "${FILENAME}" -format UDRW -o "${tmp}" -encryption "$ENC" 2>&1)
-	if [[ "$ret" =~ "failed" || "$ret" =~ "error" || "$ret" =~ "canceled" ]]; then
+	if [[ "$ret" =~ "convert failed" || "$ret" =~ "convert canceled" ]]; then
 		E_MESSAGE+=$ret
 		return 1
 	fi
@@ -365,7 +437,7 @@ create() {
 	fi
 
 	if [[ -e "${FILENAME}" || -e "${FILENAME}".dmg ]]; then
-		E_MESSAGE+="File arealdy exists!"
+		E_MESSAGE+="File already exists!"
 		return 1
 	fi
 
@@ -391,25 +463,23 @@ create() {
 		compression_banner
 		
 		s_echo "Creating, copying and compressing the mactomb..."
-		ret=$(${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname $VOLNAME \
+		ret=$(${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname "$VOLNAME" \
 			-format $CFORMAT -imagekey zlib-level=$CLEVEL -srcfolder ${PROFILE} 2>&1)
-		if [[ "$ret" =~ "failed" || "$ret" =~ "error" || "$ret" =~ "canceled" ]]; then
+		if [[ "$ret" =~ "create failed" || "$ret" =~ "create canceled" ]]; then
 			E_MESSAGE+=$ret
 			return 1
 		fi
 		S_MESSAGE="mactomb file '${FILENAME}' successfully created!"
 	elif [[ "${COMPRESS}" -eq 0 && "${PROFILE}" ]]; then
 		s_echo "Creating the mactomb..."
-		ret=$(${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname $VOLNAME -attach 2>&1)
-		if [[ "$ret" =~ "failed" || "$ret" =~ "error" || "$ret" =~ "canceled" ]]; then
+		ret=$(${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname "$VOLNAME" -attach 2>&1)
+		if [[ "$ret" =~ "create failed" || "$ret" =~ "attach failed" || "$ret" =~ "create canceled" ]]; then
 			E_MESSAGE+=$ret
 			return 1
 		fi
 		
 		s_echo "mactomb file '${FILENAME}' successfully created!"
 		echo -e "\nCopying profile file(s) into the mactomb..."
-
-		#ret=$(${HDIUTIL} attach "${FILENAME}")
 
 		local abs_vol_path="/Volumes/$VOLNAME"
 		# enforce a check - don't trust hdiutil
@@ -437,21 +507,21 @@ create() {
 
 		compression_banner
 
-		# problem is: if you specify -format UDZO, hdiutil requires -srcfolder to be set
+		# problem is: if you specify -format UDZO, hdiutil requires -srcfolder to be set.
 		# so we need to create a temp tomb and then compress (hdiutil convert)
-		local tmp="/tmp/$RANDOM.$$.dmg"
+		local tmp="/tmp/$RANDOM$RANDOM.dmg"
 
 		# since 'convert' doesn't preserve encryption, let's create a normal container
 		# that will be encrypted by 'convert'
-		ret=$(${HDIUTIL} create "$tmp" -size "$SIZE" -fs "$FS" -nospotlight -volname $VOLNAME 2>&1)
-		if [[ "$ret" =~ "failed" || "$ret" =~ "error" || "$ret" =~ "canceled" ]]; then
+		ret=$(${HDIUTIL} create "$tmp" -size "$SIZE" -fs "$FS" -nospotlight -volname "$VOLNAME" 2>&1)
+		if [[ "$ret" =~ "create failed" || "$ret" =~ "create canceled" ]]; then
 			rm -rf "${tmp}"
 			E_MESSAGE+=$ret
 			return 1
 		fi
 
 		ret=$(${HDIUTIL} convert "$tmp" -format $CFORMAT -imagekey zlib-level=$CLEVEL -o "${FILENAME}" -encryption "$ENC" 2>&1)
-		if [[ "$ret" =~ "failed" || "$ret" =~ "error" || "$ret" =~ "canceled" ]]; then
+		if [[ "$ret" =~ "convert failed" || "$ret" =~ "convert canceled" ]]; then
 			rm -rf "${tmp}"
 			E_MESSAGE+=$ret
 			return 1
@@ -461,8 +531,8 @@ create() {
 		rm -rf "${tmp}"
 		S_MESSAGE="mactomb file '${FILENAME}' successfully created!"
 	else
-		ret=$(${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname $VOLNAME 2>&1)
-		if [[ "$ret" =~ "failed" || "$ret" =~ "error" || "$ret" =~ "canceled" ]]; then
+		ret=$(${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname "$VOLNAME" 2>&1)
+		if [[ "$ret" =~ "create failed" || "$ret" =~ "create canceled" ]]; then
 			E_MESSAGE+=$ret
 			return 1
 		fi
@@ -607,7 +677,7 @@ forge() {
 	return 1
 }
 
-COMMAND=('create', 'app', 'help', 'forge', 'resize', 'list', 'chpass', 'compress', 'decompress')
+COMMAND=('create', 'app', 'help', 'forge', 'resize', 'list', 'chpass', 'compress', 'decompress', 'rename')
 HDIUTIL=/usr/bin/hdiutil
 # if 1, the script will use the Mac OS X notification method
 NOTIFICATION=0
@@ -629,7 +699,7 @@ OUTSCRIPT=""
 AUTOMATOR="template.app"
 # default volume name for HFS+. Change this if you don't like it
 VOLNAME="untitled"
-VERSION=1.2
+VERSION=1.3
 CMD=$1
 shift
 
@@ -662,6 +732,12 @@ done
 
 if [[ ! "${COMMAND[@]}" =~ "${CMD}" ]]; then
 	usage
+	exit 1
+fi
+
+# add a checks just to be sure
+if [ ! -e "${HDIUTIL}" ]; then
+	e_echo "Weird, hdiutil not found in '${HDIUTIL}'. Can't make it."
 	exit 1
 fi
 

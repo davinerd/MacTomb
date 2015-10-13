@@ -3,6 +3,10 @@ MacTomb is a kind of [Tomb](https://github.com/dyne/Tomb) porting for Mac OS X. 
 
 Read about MacTomb on [dyne](https://www.dyne.org/software/mactomb/) and [Lost in ICT blog](https://lostinict.wordpress.com/2015/09/27/mactomb-enhance-your-privacy-on-mac-os-x/)
 
+# What's new? (v.1.3)
+- added `rename` command: you can now change your volume label within `mactomb`
+- more robust checks to ensure everything works fine
+
 # What's new? (v.1.2)
 - compression/decompression support: mactomb is able to compress and decompress mactomb files. See the related section
 - `list` command: it will list all the open mactombs
@@ -30,7 +34,7 @@ Version 1.0 released! Yes, from 0.1 to 1.0. Why? Big improvements has been made.
 The help is quite explicit:
 ```
 $ bash mactomb.sh help
-..:: MacTomb v.1.2 ::..
+..:: MacTomb v.1.3 ::..
 by Davide Barbato
 
 Help!
@@ -47,17 +51,22 @@ compress:
 decompress:
   -f <file>   Decompress a mactomb <file>
 
-create:
-  -f <file>   File to create (the mactomb file)
-  -s <size[m|g|t] Size of the file (m=mb, g=gb, t=tb)
+rename:
+  -f <file>       mactomb file (already created)
   Optional:
-    -p <profile>  Folder/file to copy into the newly created mactomb <file>
-    -c      Create a zlib compressed mactomb <file> (will make it read-only)
-    -n <volname>  Specify the volume name to assign to the mactomb <file>
+    -n <volname>  Specify the new volume name to assign to the mactomb <file> (default is "untitled")
+
+create:
+  -f <file>        File to create (the mactomb file)
+  -s <size[m|g|t]  Size of the file (m=mb, g=gb, t=tb)
+  Optional:
+    -p <profile>   Folder/file to copy into the newly created mactomb <file>
+    -c             Create a zlib compressed mactomb <file> (will make it read-only)
+    -n <volname>   Specify the volume name to assign to the mactomb <file>
 
 app:
-  -f <file> Encrypted DMG to use as mactomb file (already created)
-  -a <app>  Binary and arguments of the app you want to use inside the mactomb file
+  -f <file>   Encrypted DMG to use as mactomb file (already created)
+  -a <app>    Binary and arguments of the app you want to use inside the mactomb file
   -b <output> The bash script used to launch the <app> inside the mactomb file <file>
 
 forge:
