@@ -74,6 +74,9 @@ mount:
   Mount mactomb to file system
   -f <file>\tEncrypted DMG to use as mactomb file (already created)
   -m <path>\tMount at <path> instead of inside /Volumes
+unmount:
+  Unmount mactomb volume
+  -f <file>\tMactomb file to unmount
 	'''
 	return 2
 }
@@ -588,6 +591,70 @@ mount() {
 	return 1
 }
 
+unmount() {
+	if [[ ! "${FILENAME}" ]]; then
+		E_MESSAGE="You must specify a filename!"
+		return 1
+	fi
+
+	if [ -d "${FILENAME}" ]; then
+		E_MESSAGE+="File is a directory"
+		return 1
+	fi
+
+	local PLISTBUDDY="/usr/libexec/PlistBuddy"
+
+	if [ ! -x "$PLISTBUDDY" ]; then
+		E_MESSAGE="PlistBuddy not found in $PLISTBUDDY. Maybe it's on a different path or not installed?"
+		return 1
+	fi
+
+	local mountpoint mnt ret
+	# Small workaraund to get real mactomb path
+	local real_path=$(cd "$(dirname $FILENAME)"; pwd)/$(basename $FILENAME)
+	local tempfile=$(mktemp /tmp/$RANDOM.XXX)
+	${HDIUTIL} info -plist > $tempfile
+
+	local -i idx=0
+	while True; do
+		imgpath=$(${PLISTBUDDY} -c Print:images:$idx:image-path $tempfile 2>/dev/null)
+		if [ ! "$imgpath" ]; then
+			break
+		fi
+		
+		local -i j=0
+		while True; do
+			mountpoint=$(${PLISTBUDDY} -c Print:images:$idx:system-entities:$j $tempfile 2>/dev/null)
+			if [ ! "$mountpoint" ]; then
+				break
+			fi
+			mountpoint=$(${PLISTBUDDY} -c Print:images:$idx:system-entities:$j:mount-point $tempfile 2>/dev/null)
+			# mount-point is not mandatory inside system-entities
+			if [ "$mountpoint" ]; then
+				# pretty lame...
+				if [[ "$imgpath" -ef "$real_path" ]]; then
+					mnt=$mountpoint
+					break
+				fi
+			fi
+			j+=1
+		done
+		idx+=1
+	done
+
+	if [[ ! "$mnt" ]]; then
+		E_MESSAGE="Can't find mount point for your tomb $FILENAME"
+		return 1
+	fi
+	ret=$(${HDIUTIL} detach "$mnt" 2>&1)
+	if [[ "$ret" =~ "detach failed" ]]; then
+		E_MESSAGE+=$ret
+		return 1
+	fi
+	S_MESSAGE="Mactomb ${FILENAME} was successfully unmounted"
+	return 0
+}
+
 app() {
 	E_MESSAGE="Failed creating the script: "
 	if [[ ! "$APPCMD" || ! "$BASHSCRIPT" || ! "$FILENAME" ]]; then
@@ -723,7 +790,7 @@ forge() {
 	return 1
 }
 
-COMMAND=('create', 'app', 'help', 'forge', 'resize', 'list', 'chpass', 'compress', 'decompress', 'rename', 'mount')
+COMMAND=('create', 'app', 'help', 'forge', 'resize', 'list', 'chpass', 'compress', 'decompress', 'rename', 'mount', 'unmount')
 HDIUTIL=/usr/bin/hdiutil
 # if 1, the script will use the Mac OS X notification method
 NOTIFICATION=0
