@@ -70,6 +70,10 @@ forge:
   Will call both "create" and "app" if all flags are specified. Can be called on \n  already created files, in this case skipping "create" and/or "app"
   Optional:
     -o <app>\tThe Automator app used to launch the bash <output> script by Mac OS X
+mount:
+  Mount mactomb to file system
+  -f <file>\tEncrypted DMG to use as mactomb file (already created)
+  -m <path>\tMount at <path> instead of inside /Volumes
 	'''
 	return 2
 }
@@ -554,6 +558,36 @@ create() {
 	return 0
 }
 
+mount() {
+	if [[ ! "${FILENAME}" ]]; then
+		E_MESSAGE="You must specify a filename!"
+		return 1
+	fi
+
+	if [ -d "${FILENAME}" ]; then
+		E_MESSAGE+="File is a directory"
+		return 1
+	fi
+
+	if [ -e "$FILENAME" ]; then
+		local ret
+		if [[ "$MOUNTPOINT" && -d "$MOUNTPOINT" ]]; then
+			ret=$(${HDIUTIL} attach "${FILENAME}" -mountpoint "${MOUNTPOINT}" 2>&1)
+		else
+			ret=$(${HDIUTIL} attach "${FILENAME}" 2>&1)
+		fi
+		
+		if [[ "$ret" =~ "attach failed" ]]; then
+			E_MESSAGE+=$ret
+			return 1
+		fi
+		S_MESSAGE="Mactomb ${FILENAME} was successfully mounted "
+		return 0
+	fi
+	E_MESSAGE="Cannot find file ${FILENAME}"
+	return 1
+}
+
 app() {
 	E_MESSAGE="Failed creating the script: "
 	if [[ ! "$APPCMD" || ! "$BASHSCRIPT" || ! "$FILENAME" ]]; then
@@ -689,7 +723,7 @@ forge() {
 	return 1
 }
 
-COMMAND=('create', 'app', 'help', 'forge', 'resize', 'list', 'chpass', 'compress', 'decompress', 'rename')
+COMMAND=('create', 'app', 'help', 'forge', 'resize', 'list', 'chpass', 'compress', 'decompress', 'rename', 'mount')
 HDIUTIL=/usr/bin/hdiutil
 # if 1, the script will use the Mac OS X notification method
 NOTIFICATION=0
@@ -711,11 +745,13 @@ OUTSCRIPT=""
 AUTOMATOR="template.app"
 # default volume name for HFS+. Change this if you don't like it
 VOLNAME="untitled"
+# mount point for tombs, if not provided system will mount them to /Volume
+MOUNTPOINT=""
 VERSION=1.3
 CMD=$1
 shift
 
-while getopts "a:f:s:p:o:b:n:hvc" opt; do
+while getopts "a:f:s:p:o:b:n:m:hvc" opt; do
 	case "${opt}" in
 		f)
 			FILENAME=$OPTARG;;
@@ -733,6 +769,8 @@ while getopts "a:f:s:p:o:b:n:hvc" opt; do
 			BASHSCRIPT=$OPTARG;;
 		o)
 			OUTSCRIPT=$OPTARG;;
+		m)
+			MOUNTPOINT=$OPTARG;;
 		v)
 			NOTIFICATION=1;;
 		\?)
