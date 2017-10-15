@@ -18,7 +18,7 @@
 ##############################################################################
 
 banner() {
-	echo "..:: MacTomb v.$VERSION ::.."
+	echo "..:: MacTomb v$VERSION ::.."
 	echo -e "by Davide Barbato\n"
 }
 
@@ -28,6 +28,10 @@ e_echo() {
 
 s_echo() {
 	echo -e "[*] $1"
+}
+
+p_echo() {
+	echo -e "[-] $1"
 }
 
 usage() {
@@ -54,7 +58,9 @@ rename:
   -f <file>\t\tmactomb file (already created)
   Optional:
     -n <volname>\tSpecify the new volume name to assign to the mactomb <file> (default is "untitled")
-    -b <script>\tThe bash script in which replaces all the occurence of the old volum name with the new one\n
+    -b <script>\t\tThe bash script in which replaces all the occurence of the old volum name with the new one\n
+encrypt:
+  -f <file>\t\tmactomb file to encrypt\n
 create:
   -f <file>\t\tFile to create (the mactomb file)
   -s <size[m|g|t]\tSize of the file (m=mb, g=gb, t=tb)
@@ -69,7 +75,9 @@ app:
 forge:
   Will call both "create" and "app" if all flags are specified. Can be called on \n  already created files, in this case skipping "create" and/or "app"
   Optional:
-    -o <app>\tThe Automator app used to launch the bash <output> script by Mac OS X
+    -o <app>\tThe Automator app used to launch the bash <script> by Mac OS X\n
+    Example
+    bash $0 forge -f ~/mytomb.dmg -s 100m -a "/Applications/Firefox.app/Contents/MacOS/firefox-bin -p secure_profile" -b ~/run.sh -o ~/runmy.app
 mount:
   Mount mactomb to file system
   -f <file>\tEncrypted DMG to use as mactomb file (already created)
@@ -87,6 +95,7 @@ compression_banner() {
 #                  WARNING                       #
 #                                                #
 #  Compression will make the mactomb read-only   #
+#                  and DMG                       #
 #                                                #
 ##################################################
 		'''
@@ -97,7 +106,7 @@ decompression_banner() {
 ##################################################
 #                  WARNING                       #
 #                                                #
-#  Decompression will overwrites your compressed #
+#  Decompression will overwrite your compressed  #
 #                  mactomb                       #
 #                                                #
 ##################################################
@@ -132,7 +141,7 @@ list() {
 	local mountpoint mnt space_tot used avail perc oid
 
 	if [ ! -x "$PLISTBUDDY" ]; then
-		E_MESSAGE="PlistBuddy not found in $PLISTBUDDY. Maybe it's on a different path or not installed?"
+		F_MESSAGE="PlistBuddy not found in $PLISTBUDDY. Maybe it's on a different path or not installed?"
 		return 1
 	fi
 
@@ -209,52 +218,54 @@ list() {
 	rm -rf $tempfile
 	if [ $cnt -gt 0 ]; then
 		echo
-		S_MESSAGE="There are nr.$cnt mactomb(s) open"
+		F_MESSAGE="There are nr.$cnt mactomb(s) open"
 	else
-		S_MESSAGE="There are no mactombs opened"
+		F_MESSAGE="There are no mactombs opened"
 	fi
+
 	return 0
 }
 
 # this function can be used even for not-encrypted DMG
 chpass() {
-	E_MESSAGE="Cannot change passphrase: "
+	F_MESSAGE="Cannot change passphrase: "
 
 	if [ ! "${FILENAME}" ]; then
-		E_MESSAGE="Please specify the filename (-f)"
+		F_MESSAGE="Please specify the filename (-f)"
 		return 1
 	fi
 
 	if [ ! -e "${FILENAME}" ]; then
-		E_MESSAGE+="'${FILENAME}' not found."
+		F_MESSAGE+="'${FILENAME}' not found."
 		return 1
 	fi
 
 	if [ -d "${FILENAME}" ]; then
-		E_MESSAGE+="'${FILENAME}' is a directory."
+		F_MESSAGE+="'${FILENAME}' is a directory."
 		return 1
 	fi
 
 	local ret=$(${HDIUTIL} chpass "${FILENAME}" 2>&1)
 	if [[ "$ret" =~ "chpass failed" ]]; then
-		E_MESSAGE+="$ret"
+		F_MESSAGE+="$ret"
 		return 1
 	fi
 
-	S_MESSAGE="Successfully changed your passphrase!"
+	F_MESSAGE="Successfully changed your passphrase!"
+
 	return 0
 }
 
 # this function can be used even for not-encrypted DMG
 rename() {
-	E_MESSAGE="Cannot rename '$FILENAME': "
+	F_MESSAGE="Cannot rename '$FILENAME': "
 	if [ ! "${FILENAME}" ]; then
-		E_MESSAGE="Please specify the filename (-f)"
+		F_MESSAGE="Please specify the filename (-f)"
 		return 1
 	fi
 
 	if [ ! -e "${FILENAME}" ]; then
-		E_MESSAGE+="file not found."
+		F_MESSAGE+="file not found."
 		return 1
 	fi
 
@@ -266,19 +277,19 @@ rename() {
 	# a quick check to avoid going through the process of renameing a compressed mactomb.
 	# if the mactomb is mounted, this check fails.
 	if [ ! "${already_mounted}" ]; then
-		s_echo "Getting information..."
+		p_echo "Getting information..."
 		ret=$(${HDIUTIL} imageinfo "${FILENAME}" 2>&1 | grep "Compressed:")
 		if [[ "$ret" =~ "true" ]]; then
-			E_MESSAGE+="compressed mactombs are read-only"
+			F_MESSAGE+="compressed mactombs are read-only"
 			return 1
 		fi
 	fi
 
-	s_echo "Renaming to '$VOLNAME'"
+	p_echo "Renaming to '$VOLNAME'"
 	# if already attached we don't care, hdiutil is smart enough
 	ret=$(${HDIUTIL} attach "${FILENAME}" 2>&1)
 	if [[ "$ret" =~ "attach failed" ]]; then
-		E_MESSAGE+=$ret
+		F_MESSAGE+=$ret
 		return 1
 	fi
 
@@ -290,13 +301,13 @@ rename() {
 		if [ ! "$already_mounted" ]; then
 			${HDIUTIL} detach "$disk" &> /dev/null
 		fi
-		E_MESSAGE+="same label"
+		F_MESSAGE+="same label"
 		return 1
 	fi
 	
 	ret=$(/usr/sbin/diskutil rename "${disk}" "${VOLNAME}" 2>&1)
 
-	S_MESSAGE="Successfully renamed your mactomb!"
+	F_MESSAGE="Successfully renamed your mactomb!"
 
 	if [ ! "$already_mounted" ]; then
 		# we don't want to let it sits open on your system!
@@ -305,7 +316,7 @@ rename() {
 
 	# this can happens if your mactomb is compressed and already mounted
 	if [[ "$ret" =~ "Failed to rename volume" ]]; then
-		E_MESSAGE+=$ret
+		F_MESSAGE+=$ret
 		return 1
 	fi
 
@@ -323,25 +334,25 @@ rename() {
 
 # this function can be used even for not-encrypted DMG
 resize() {
-	E_MESSAGE="Cannot resize '$FILENAME': "
+	F_MESSAGE="Cannot resize '$FILENAME': "
 	if [[ ! "${FILENAME}" || ! "${SIZE}" ]]; then
-		E_MESSAGE="Please specify the filename (-f) and the size (-s)"
+		F_MESSAGE="Please specify the filename (-f) and the size (-s)"
 		return 1
 	fi
 
 	if [ ! -e "${FILENAME}" ]; then
-		E_MESSAGE+="file not found."
+		F_MESSAGE+="file not found."
 		return 1
 	fi
 
 	if [ -d "${FILENAME}" ]; then
-		E_MESSAGE+="is a directory."
+		F_MESSAGE+="is a directory."
 		return 1
 	fi
 
 	check_size
 	if [ "$?" -eq 1 ]; then
-		E_MESSAGE+="wrong size numer!"
+		F_MESSAGE+="wrong size numer!"
 		return 1
 	fi
 
@@ -360,35 +371,36 @@ resize() {
 	elif [ $new_size -gt $st_size ]; then
 		param="-growonly"
 	else
-		E_MESSAGE+="size is the same. Not resizing"
+		F_MESSAGE+="size is the same. Not resizing"
 		return 1
 	fi
 
 	${HDIUTIL} resize -size ${SIZE} ${param} "${FILENAME}"
 
 	if [ "$?" -ne 0 ]; then
-		E_MESSAGE="Mactomb file '$FILENAME' not resized"
+		F_MESSAGE="Mactomb file '$FILENAME' not resized"
 		return 1
 	fi
 
-	S_MESSAGE="Mactomb file '$FILENAME' succesfully resized!"
+	F_MESSAGE="Mactomb file '$FILENAME' succesfully resized!"
+
 	return 0
 }
 
 compress() {
-	E_MESSAGE="Failed compressing the mactomb file '${FILENAME}': "
+	F_MESSAGE="Failed compressing the mactomb file '${FILENAME}': "
 	if [[ ! "${FILENAME}" ]]; then
-		E_MESSAGE="You must specify a filename!"
+		F_MESSAGE="You must specify a filename!"
 		return 1
 	fi
 
 	if [ -d "${FILENAME}" ]; then
-		E_MESSAGE+="file is a directory"
+		F_MESSAGE+="file is a directory"
 		return 1
 	fi
 
 	if [ ! -e "${FILENAME}" ]; then
-		E_MESSAGE+="file not found."
+		F_MESSAGE+="file not found."
 		return 1
 	fi
 
@@ -396,33 +408,33 @@ compress() {
 
 	local tmp="/tmp/$RANDOM$RANDOM.dmg"
 
-	s_echo "Compressing...(you'll asked to insert a new passphrase: choose a new one or insert the old one)"
+	p_echo "Compressing...(you'll asked to insert a new passphrase: choose a new one or insert the old one)"
 	ret=$(${HDIUTIL} convert "${FILENAME}" -format $CFORMAT -imagekey zlib-level=$CLEVEL -o "${tmp}" -encryption "$ENC" 2>&1)
 	if [[ "$ret" =~ "convert failed" || "$ret" =~ "convert canceled" ]]; then
-		E_MESSAGE+=$ret
+		F_MESSAGE+=$ret
 		return 1
 	fi
 
 	mv -f "$tmp" "${FILENAME}"
-	S_MESSAGE="Mactomb file '${FILENAME}' successfully compressed!"
-	return 0
+	F_MESSAGE="Mactomb file '${FILENAME}' successfully compressed!"
 
+	return 0
 }
 
 decompress() {
-	E_MESSAGE="Failed decompressing the mactomb file '${FILENAME}': "
+	F_MESSAGE="Failed decompressing the mactomb file '${FILENAME}': "
 	if [[ ! "${FILENAME}" ]]; then
-		E_MESSAGE="You must specify a filename!"
+		F_MESSAGE="You must specify a filename (-f)!"
 		return 1
 	fi
 
 	if [ -d "${FILENAME}" ]; then
-		E_MESSAGE+="file is a directory"
+		F_MESSAGE+="file is a directory"
 		return 1
 	fi
 
 	if [ ! -e "${FILENAME}" ]; then
-		E_MESSAGE+="file not found."
+		F_MESSAGE+="file not found."
 		return 1
 	fi
 
@@ -430,75 +442,119 @@ decompress() {
 
 	local tmp="/tmp/$RANDOM$RANDOM.dmg"
 
-	s_echo "Decompressing...(you'll asked to insert a new passphrase: choose a new one or insert the old one)"
-	ret=$(${HDIUTIL} convert "${FILENAME}" -format UDRW -o "${tmp}" -encryption "$ENC" 2>&1)
+	p_echo "Decompressing...(you'll asked to insert a new passphrase: choose a new one or insert the old one)"
+	local ret=$(${HDIUTIL} convert "${FILENAME}" -format UDRW -o "${tmp}" -encryption "$ENC" 2>&1)
 	if [[ "$ret" =~ "convert failed" || "$ret" =~ "convert canceled" ]]; then
-		E_MESSAGE+=$ret
+		F_MESSAGE+=$ret
 		return 1
 	fi
 
 	mv -f "$tmp" "${FILENAME}"
-	S_MESSAGE="Mactomb file '${FILENAME}' successfully decompressed!"
+	F_MESSAGE="Mactomb file '${FILENAME}' successfully decompressed!"
+
 	return 0
 }
 
-create() {
-	E_MESSAGE="Failed creating the mactomb file '${FILENAME}': "
+encrypt() {
+	F_MESSAGE="Failed encrypting the mactomb file '${FILENAME}': "
 
-	if [[ ! "${FILENAME}" || ! "$SIZE" ]]; then
-		E_MESSAGE="You must specify a filename and/or a size!"
+	if [[ ! "${FILENAME}" ]]; then
+		F_MESSAGE="You must specify a filename (-f)!"
 		return 1
 	fi
 
 	if [ -d "${FILENAME}" ]; then
-		E_MESSAGE+="File is a directory"
+		F_MESSAGE+="file is a directory"
 		return 1
 	fi
 
-	if [[ -e "${FILENAME}" || -e "${FILENAME}".dmg ]]; then
-		E_MESSAGE+="File already exists!"
+	if [ ! -e "${FILENAME}" ]; then
+		F_MESSAGE+="file not found."
+		return 1
+	fi
+
+	local encr=$(${HDIUTIL} imageinfo "${FILENAME}" | grep Encrypted)
+	if [ ! "$encr" ]; then
+		F_MESSAGE+="error getting information."
+		return 1
+	elif [[ "$encr" =~ "true" ]]; then
+		F_MESSAGE+="already encrypted."
+		return 1
+	fi
+
+	local tmp="/tmp/$RANDOM$RANDOM.dmg"
+
+	local ret=$(${HDIUTIL} convert "${FILENAME}" -format UDRW -o "${tmp}" -encryption "$ENC" 2>&1)
+	if [[ "$ret" =~ "convert failed" || "$ret" =~ "convert canceled" ]]; then
+		rm -rf "${tmp}"
+		F_MESSAGE+=$ret
+		return 1
+	fi
+
+	mv -f "$tmp" "${FILENAME}"
+	F_MESSAGE="Mactomb file '${FILENAME}' successfully encrypted!"
+
+	return 0
+}
+
+create() {
+	F_MESSAGE="Failed creating the mactomb file '${FILENAME}': "
+
+	if [[ ! "${FILENAME}" || ! "$SIZE" ]]; then
+		F_MESSAGE="You must specify a filename and/or a size!"
+		return 1
+	fi
+
+	if [ -d "${FILENAME}" ]; then
+		F_MESSAGE+="File is a directory"
+		return 1
+	fi
+
+	if [[ -e "${FILENAME}" || -e "${FILENAME}".dmg || -e "${FILENAME}".sparsebundle ]]; then
+		F_MESSAGE+="File already exists!"
 		return 1
 	fi
 
 	check_size
 	if [ $? -eq 1 ]; then
-		E_MESSAGE+="Wrong size number!"
+		F_MESSAGE+="Wrong size number!"
 		return 1
 	fi
 
-	local ret
-
-	ret=$(mount | grep "$VOLNAME")
+	local ret=$(mount | grep "$VOLNAME")
 
 	if [[ "$ret" ]]; then
-		E_MESSAGE="Volume name '$VOLNAME' already used. Please pick up a different name (-n) or unmount it"
+		F_MESSAGE="Volume name '$VOLNAME' already used. Please pick up a different name (-n) or unmount it"
 		return 1
 	fi
-	
-	# this can be quite huge block to read but I was not able to find a more elegant solution
 
+	if [[ "${FILENAME##*.}"	== "dmg" || "${IMGFORMAT}" == "dmg" ]]; then
+		IMGFORMAT="UDIF"
+	fi
+
+	# this can be quite huge block to read but I was not able to find a more elegant solution
 	if [[ "${COMPRESS}" -eq 1 && "${PROFILE}" ]]; then
 
 		compression_banner
 		
-		s_echo "Creating, copying and compressing the mactomb..."
-		ret=$(${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname "$VOLNAME" \
+		p_echo "Creating, copying and compressing the mactomb..."
+		ret=$(${HDIUTIL} create "$FILENAME" -type "$IMGFORMAT" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname "$VOLNAME" \
 			-format $CFORMAT -imagekey zlib-level=$CLEVEL -srcfolder ${PROFILE} 2>&1)
 		if [[ "$ret" =~ "create failed" || "$ret" =~ "create canceled" ]]; then
-			E_MESSAGE+=$ret
+			F_MESSAGE+=$ret
 			return 1
 		fi
-		S_MESSAGE="mactomb file '${FILENAME}' successfully created!"
+		F_MESSAGE="mactomb file '${FILENAME}' successfully created!"
 	elif [[ "${COMPRESS}" -eq 0 && "${PROFILE}" ]]; then
-		s_echo "Creating the mactomb..."
-		ret=$(${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname "$VOLNAME" -attach 2>&1)
+		p_echo "Creating the mactomb..."
+		ret=$(${HDIUTIL} create "$FILENAME" -type "$IMGFORMAT" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname "$VOLNAME" -attach 2>&1)
 		if [[ "$ret" =~ "create failed" || "$ret" =~ "attach failed" || "$ret" =~ "create canceled" ]]; then
-			E_MESSAGE+=$ret
+			F_MESSAGE+=$ret
 			return 1
 		fi
 		
 		s_echo "mactomb file '${FILENAME}' successfully created!"
-		echo -e "\nCopying profile file(s) into the mactomb..."
+		p_echo "\nCopying profile file(s) into the mactomb..."
 
 		local abs_vol_path="/Volumes/$VOLNAME"
 		# enforce a check - don't trust hdiutil
@@ -518,44 +574,44 @@ create() {
 			# I really don't care about the exit status.
 			${HDIUTIL} detach "$abs_vol_path" &> /dev/null
 		else
-			E_MESSAGE="Problem mounting the mactomb file, file(s) not copied."
+			F_MESSAGE="Problem mounting the mactomb file, file(s) not copied."
 			return 1
 		fi
-		S_MESSAGE="Enjoy your mactomb"
+		F_MESSAGE="Enjoy your mactomb"
 	elif [[ ! "${PROFILE}" && "${COMPRESS}" -eq 1 ]]; then
 
 		compression_banner
 
 		# problem is: if you specify -format UDZO, hdiutil requires -srcfolder to be set.
 		# so we need to create a temp tomb and then compress (hdiutil convert)
-		local tmp="/tmp/$RANDOM$RANDOM.dmg"
+		local tmp="/tmp/$RANDOM$RANDOM"
 
 		# since 'convert' doesn't preserve encryption, let's create a normal container
 		# that will be encrypted by 'convert'
 		ret=$(${HDIUTIL} create "$tmp" -size "$SIZE" -fs "$FS" -nospotlight -volname "$VOLNAME" 2>&1)
 		if [[ "$ret" =~ "create failed" || "$ret" =~ "create canceled" ]]; then
 			rm -rf "${tmp}"
-			E_MESSAGE+=$ret
+			F_MESSAGE+=$ret
 			return 1
 		fi
 
 		ret=$(${HDIUTIL} convert "$tmp" -format $CFORMAT -imagekey zlib-level=$CLEVEL -o "${FILENAME}" -encryption "$ENC" 2>&1)
 		if [[ "$ret" =~ "convert failed" || "$ret" =~ "convert canceled" ]]; then
 			rm -rf "${tmp}"
-			E_MESSAGE+=$ret
+			F_MESSAGE+=$ret
 			return 1
 		fi
 
 		# removing the temp file
 		rm -rf "${tmp}"
-		S_MESSAGE="mactomb file '${FILENAME}' successfully created!"
+		F_MESSAGE="mactomb file '${FILENAME}' successfully created!"
 	else
-		ret=$(${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname "$VOLNAME" 2>&1)
+		ret=$(${HDIUTIL} create "$FILENAME" -type "$IMGFORMAT" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname "$VOLNAME" 2>&1)
 		if [[ "$ret" =~ "create failed" || "$ret" =~ "create canceled" ]]; then
-			E_MESSAGE+=$ret
+			F_MESSAGE+=$ret
 			return 1
 		fi
-		S_MESSAGE="mactomb file '${FILENAME}' successfully created!"
+		F_MESSAGE="mactomb file '${FILENAME}' successfully created!"
 	fi
 	
 	return 0
@@ -656,14 +712,14 @@ unmount() {
 }
 
 app() {
-	E_MESSAGE="Failed creating the script: "
+	F_MESSAGE="Failed creating the script: "
 	if [[ ! "$APPCMD" || ! "$BASHSCRIPT" || ! "$FILENAME" ]]; then
-		E_MESSAGE="Please specify -a -b -f."
+		F_MESSAGE="Please specify -a -b -f."
 		return 1
 	fi
 
 	if  [ ! -e "${FILENAME}" ]; then
-		E_MESSAGE+="$FILENAME file not found."
+		F_MESSAGE+="$FILENAME file not found."
 		return 1
 	fi
 
@@ -671,17 +727,17 @@ app() {
 	read -ra app_arr -d '' <<< "$APPCMD"
 
 	if [ ! -e "${app_arr[0]}" ]; then
-		E_MESSAGE+="Cannot find ${app_arr[0]}."
+		F_MESSAGE+="Cannot find ${app_arr[0]}."
 		return 1
 	fi
 
 	if [ -d "${BASHSCRIPT}" ]; then
-		E_MESSAGE+="$BASHSCRIPT is a directory."
+		F_MESSAGE+="$BASHSCRIPT is a directory."
 		return 1
 	fi
 
 	if [ -e "${BASHSCRIPT}" ]; then
-		E_MESSAGE+="$BASHSCRIPT already exists."
+		F_MESSAGE+="$BASHSCRIPT already exists."
 		return 1
 	fi
 
@@ -696,12 +752,12 @@ app() {
 	fi
 
 	if [ -e "${APPCMD}" ]; then
-		E_MESSAGE+="$APPCMD already exists."
+		F_MESSAGE+="$APPCMD already exists."
 		return 1
 	fi
 
 	if [ -e "${APPCMD}" ]; then
-		E_MESSAGE+="$APPCMD is a directory"
+		F_MESSAGE+="$APPCMD is a directory"
 		return 1
 	fi 
 
@@ -724,15 +780,16 @@ fi)
 
 	# ensure our bash script is executable
 	chmod +x "$BASHSCRIPT"
-	S_MESSAGE="File $BASHSCRIPT successfully created!"
+	F_MESSAGE="File $BASHSCRIPT successfully created!"
+
 	return 0
 }
 
 forge() {
-	E_MESSAGE="Tell me what to do!"
+	F_MESSAGE="Tell me what to do!"
 
 	if [[ "${FILENAME}" && "$SIZE" ]]; then
-		s_echo "Creating the mactomb file..."
+		p_echo "Creating the mactomb file..."
 		create
 		if [ "$?" -eq 1 ]; then
 			return 1
@@ -740,7 +797,7 @@ forge() {
 	fi
 
 	if [[ "$APPCMD" && "$BASHSCRIPT" && "$FILENAME" ]]; then
-		s_echo "Creating the output script..."
+		p_echo "Creating the output script..."
 		app
 		if [ "$?" -eq 1 ]; then
 			return 1
@@ -750,11 +807,11 @@ forge() {
 	if [[ "$OUTSCRIPT" ]]; then
 		# we can't create the Automator app without bash script!
 		if [[ ! "$BASHSCRIPT" ]]; then
-			E_MESSAGE="No bash script set. Please use the -b flag"
+			F_MESSAGE="No bash script set. Please use the -b flag"
 			return 1
 		fi
 
-		s_echo "Creating the Automator app to call the output script..."
+		p_echo "Creating the Automator app to call the output script..."
 
 		# ensure we have the .app extension to let Mac recognise it as app
 		if [[ "${OUTSCRIPT##*.}" != "app" ]]; then
@@ -767,12 +824,12 @@ forge() {
 		fi
 
 		if [ -e "$OUTSCRIPT" ]; then
-			E_MESSAGE="$OUTSCRIPT already exists."
+			F_MESSAGE="$OUTSCRIPT already exists."
 			return 1
 		fi
 
 		if [ -d "$OUTSCRIPT" ]; then
-			E_MESSAGE="$OUTSCRIPT is a directory."
+			F_MESSAGE="$OUTSCRIPT is a directory."
 			return 1
 		fi
 
@@ -782,20 +839,20 @@ forge() {
 		# let's the magic happen!
 		sed -i '' -e "s@SCRIPT_TO_RUN@$BASHSCRIPT@" "${OUTSCRIPT}/Contents/document.wflow"
 
-		S_MESSAGE="Mactomb forged! Now double click on $automatr to start your app inside the mactomb."
-
-		return 0
+		F_MESSAGE="Mactomb forged! Now double click on $automatr to start your app inside the mactomb."
 	fi
 
-	return 1
+	return 0
 }
 
-COMMAND=('create', 'app', 'help', 'forge', 'resize', 'list', 'chpass', 'compress', 'decompress', 'rename', 'mount', 'unmount')
+COMMAND=('create', 'app', 'help', 'forge', 'resize', 'list', 'chpass', 'compress', 'decompress', 'rename', 'encrypt', 'mount', 'unmount')
 HDIUTIL=/usr/bin/hdiutil
 # if 1, the script will use the Mac OS X notification method
 NOTIFICATION=0
 ENC="AES-256"
 FS="HFS+"
+# going default with sparsebundle!
+IMGFORMAT="SPARSEBUNDLE"
 # compression? 
 COMPRESS=0
 # compression format (should be the default)
@@ -818,7 +875,7 @@ VERSION=1.3
 CMD=$1
 shift
 
-while getopts "a:f:s:p:o:b:n:m:hvc" opt; do
+while getopts "a:f:s:p:o:b:n:t:m:hvc" opt; do
 	case "${opt}" in
 		f)
 			FILENAME=$OPTARG;;
@@ -836,7 +893,9 @@ while getopts "a:f:s:p:o:b:n:m:hvc" opt; do
 			BASHSCRIPT=$OPTARG;;
 		o)
 			OUTSCRIPT=$OPTARG;;
-		m)
+		t)
+			IMGFORMAT=$OPTARG;;
+    m)
 			MOUNTPOINT=$OPTARG;;
 		v)
 			NOTIFICATION=1;;
@@ -862,16 +921,14 @@ $CMD
 ret=$?
 
 if [ "$NOTIFICATION" -eq 1 ]; then
-	if [ "$ret" -eq 0 ]; then
-		osascript -e 'display notification "'"${S_MESSAGE}"'" with title "MacTomb" subtitle "'${CMD}'"'
-	else
-		osascript -e 'display notification "'"${E_MESSAGE}"'" with title "MacTomb" subtitle "'${CMD}'"'
+	if [ "$ret" -eq 0 ] || [ "$ret" -eq 1 ]; then
+		osascript -e 'display notification "'"${F_MESSAGE}"'" with title "MacTomb" subtitle "'${CMD}'"'
 	fi
 else
 	if [ "$ret" -eq 1 ]; then
-		e_echo "${E_MESSAGE}"
+		e_echo "${F_MESSAGE}"
 	# enforce check to 0 if we want some commands not to return a message (like 'help')
 	elif [ "$ret" -eq 0 ]; then
-		s_echo "${S_MESSAGE}"
+		s_echo "${F_MESSAGE}"
 	fi
 fi
