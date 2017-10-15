@@ -30,6 +30,10 @@ s_echo() {
 	echo -e "[*] $1"
 }
 
+p_echo() {
+	echo -e "[-] $1"
+}
+
 usage() {
 	banner
 	echo -e "Usage:"
@@ -211,6 +215,7 @@ list() {
 	else
 		F_MESSAGE="There are no mactombs opened"
 	fi
+
 	return 0
 }
 
@@ -240,6 +245,7 @@ chpass() {
 	fi
 
 	F_MESSAGE="Successfully changed your passphrase!"
+
 	return 0
 }
 
@@ -264,7 +270,7 @@ rename() {
 	# a quick check to avoid going through the process of renameing a compressed mactomb.
 	# if the mactomb is mounted, this check fails.
 	if [ ! "${already_mounted}" ]; then
-		s_echo "Getting information..."
+		p_echo "Getting information..."
 		ret=$(${HDIUTIL} imageinfo "${FILENAME}" 2>&1 | grep "Compressed:")
 		if [[ "$ret" =~ "true" ]]; then
 			F_MESSAGE+="compressed mactombs are read-only"
@@ -272,7 +278,7 @@ rename() {
 		fi
 	fi
 
-	s_echo "Renaming to '$VOLNAME'"
+	p_echo "Renaming to '$VOLNAME'"
 	# if already attached we don't care, hdiutil is smart enough
 	ret=$(${HDIUTIL} attach "${FILENAME}" 2>&1)
 	if [[ "$ret" =~ "attach failed" ]]; then
@@ -370,6 +376,7 @@ resize() {
 	fi
 
 	F_MESSAGE="Mactomb file '$FILENAME' succesfully resized!"
+
 	return 0
 }
 
@@ -394,7 +401,7 @@ compress() {
 
 	local tmp="/tmp/$RANDOM$RANDOM.dmg"
 
-	s_echo "Compressing...(you'll asked to insert a new passphrase: choose a new one or insert the old one)"
+	p_echo "Compressing...(you'll asked to insert a new passphrase: choose a new one or insert the old one)"
 	ret=$(${HDIUTIL} convert "${FILENAME}" -format $CFORMAT -imagekey zlib-level=$CLEVEL -o "${tmp}" -encryption "$ENC" 2>&1)
 	if [[ "$ret" =~ "convert failed" || "$ret" =~ "convert canceled" ]]; then
 		F_MESSAGE+=$ret
@@ -403,8 +410,8 @@ compress() {
 
 	mv -f "$tmp" "${FILENAME}"
 	F_MESSAGE="Mactomb file '${FILENAME}' successfully compressed!"
-	return 0
 
+	return 0
 }
 
 decompress() {
@@ -428,7 +435,7 @@ decompress() {
 
 	local tmp="/tmp/$RANDOM$RANDOM.dmg"
 
-	s_echo "Decompressing...(you'll asked to insert a new passphrase: choose a new one or insert the old one)"
+	p_echo "Decompressing...(you'll asked to insert a new passphrase: choose a new one or insert the old one)"
 	local ret=$(${HDIUTIL} convert "${FILENAME}" -format UDRW -o "${tmp}" -encryption "$ENC" 2>&1)
 	if [[ "$ret" =~ "convert failed" || "$ret" =~ "convert canceled" ]]; then
 		F_MESSAGE+=$ret
@@ -437,6 +444,7 @@ decompress() {
 
 	mv -f "$tmp" "${FILENAME}"
 	F_MESSAGE="Mactomb file '${FILENAME}' successfully decompressed!"
+
 	return 0
 }
 
@@ -478,8 +486,8 @@ encrypt() {
 
 	mv -f "$tmp" "${FILENAME}"
 	F_MESSAGE="Mactomb file '${FILENAME}' successfully encrypted!"
-	return 0
 
+	return 0
 }
 
 create() {
@@ -522,7 +530,7 @@ create() {
 
 		compression_banner
 		
-		s_echo "Creating, copying and compressing the mactomb..."
+		p_echo "Creating, copying and compressing the mactomb..."
 		ret=$(${HDIUTIL} create "$FILENAME" -type "$IMGFORMAT" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname "$VOLNAME" \
 			-format $CFORMAT -imagekey zlib-level=$CLEVEL -srcfolder ${PROFILE} 2>&1)
 		if [[ "$ret" =~ "create failed" || "$ret" =~ "create canceled" ]]; then
@@ -531,7 +539,7 @@ create() {
 		fi
 		F_MESSAGE="mactomb file '${FILENAME}' successfully created!"
 	elif [[ "${COMPRESS}" -eq 0 && "${PROFILE}" ]]; then
-		s_echo "Creating the mactomb..."
+		p_echo "Creating the mactomb..."
 		ret=$(${HDIUTIL} create "$FILENAME" -type "$IMGFORMAT" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname "$VOLNAME" -attach 2>&1)
 		if [[ "$ret" =~ "create failed" || "$ret" =~ "attach failed" || "$ret" =~ "create canceled" ]]; then
 			F_MESSAGE+=$ret
@@ -539,7 +547,7 @@ create() {
 		fi
 		
 		s_echo "mactomb file '${FILENAME}' successfully created!"
-		echo -e "\nCopying profile file(s) into the mactomb..."
+		p_echo "\nCopying profile file(s) into the mactomb..."
 
 		local abs_vol_path="/Volumes/$VOLNAME"
 		# enforce a check - don't trust hdiutil
@@ -672,6 +680,7 @@ fi)
 	# ensure our bash script is executable
 	chmod +x "$BASHSCRIPT"
 	F_MESSAGE="File $BASHSCRIPT successfully created!"
+
 	return 0
 }
 
@@ -679,7 +688,7 @@ forge() {
 	F_MESSAGE="Tell me what to do!"
 
 	if [[ "${FILENAME}" && "$SIZE" ]]; then
-		s_echo "Creating the mactomb file..."
+		p_echo "Creating the mactomb file..."
 		create
 		if [ "$?" -eq 1 ]; then
 			return 1
@@ -687,7 +696,7 @@ forge() {
 	fi
 
 	if [[ "$APPCMD" && "$BASHSCRIPT" && "$FILENAME" ]]; then
-		s_echo "Creating the output script..."
+		p_echo "Creating the output script..."
 		app
 		if [ "$?" -eq 1 ]; then
 			return 1
@@ -701,7 +710,7 @@ forge() {
 			return 1
 		fi
 
-		s_echo "Creating the Automator app to call the output script..."
+		p_echo "Creating the Automator app to call the output script..."
 
 		# ensure we have the .app extension to let Mac recognise it as app
 		if [[ "${OUTSCRIPT##*.}" != "app" ]]; then
