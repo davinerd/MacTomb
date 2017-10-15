@@ -77,11 +77,11 @@ forge:
   Optional:
     -o <app>\tThe Automator app used to launch the bash <script> by Mac OS X\n
     Example
-    bash $0 forge -f ~/mytomb.dmg -s 100m -a "/Applications/Firefox.app/Contents/MacOS/firefox-bin -p secure_profile" -b ~/run.sh -o ~/runmy.app
+    bash $0 forge -f ~/mytomb.dmg -s 100m -a "/Applications/Firefox.app/Contents/MacOS/firefox-bin -p secure_profile" -b ~/run.sh -o ~/runmy.app\n
 mount:
   Mount mactomb to file system
   -f <file>\tEncrypted DMG to use as mactomb file (already created)
-  -m <path>\tMount at <path> instead of inside /Volumes
+  -m <path>\tMount at <path> instead of inside /Volumes\n
 unmount:
   Unmount mactomb volume
   -f <file>\tMactomb file to unmount
@@ -895,7 +895,7 @@ while getopts "a:f:s:p:o:b:n:t:m:hvc" opt; do
 			OUTSCRIPT=$OPTARG;;
 		t)
 			IMGFORMAT=$OPTARG;;
-    m)
+        m)
 			MOUNTPOINT=$OPTARG;;
 		v)
 			NOTIFICATION=1;;
