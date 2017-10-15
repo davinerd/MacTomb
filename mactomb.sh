@@ -18,7 +18,7 @@
 ##############################################################################
 
 banner() {
-	echo "..:: MacTomb v.$VERSION ::.."
+	echo "..:: MacTomb v$VERSION ::.."
 	echo -e "by Davide Barbato\n"
 }
 
@@ -71,7 +71,9 @@ app:
 forge:
   Will call both "create" and "app" if all flags are specified. Can be called on \n  already created files, in this case skipping "create" and/or "app"
   Optional:
-    -o <app>\tThe Automator app used to launch the bash <output> script by Mac OS X
+    -o <app>\tThe Automator app used to launch the bash <script> by Mac OS X\n
+    Example
+    bash $0 forge -f ~/mytomb.dmg -s 100m -a "/Applications/Firefox.app/Contents/MacOS/firefox-bin -p secure_profile" -b ~/run.sh -o ~/runmy.app
 	'''
 	return 2
 }
@@ -82,6 +84,7 @@ compression_banner() {
 #                  WARNING                       #
 #                                                #
 #  Compression will make the mactomb read-only   #
+#                  and DMG                       #
 #                                                #
 ##################################################
 		'''
@@ -92,7 +95,7 @@ decompression_banner() {
 ##################################################
 #                  WARNING                       #
 #                                                #
-#  Decompression will overwrites your compressed #
+#  Decompression will overwrite your compressed  #
 #                  mactomb                       #
 #                                                #
 ##################################################
@@ -492,7 +495,7 @@ create() {
 		return 1
 	fi
 
-	if [[ -e "${FILENAME}" || -e "${FILENAME}".dmg ]]; then
+	if [[ -e "${FILENAME}" || -e "${FILENAME}".dmg || -e "${FILENAME}".sparsebundle ]]; then
 		F_MESSAGE+="File already exists!"
 		return 1
 	fi
@@ -503,23 +506,24 @@ create() {
 		return 1
 	fi
 
-	local ret
-
-	ret=$(mount | grep "$VOLNAME")
+	local ret=$(mount | grep "$VOLNAME")
 
 	if [[ "$ret" ]]; then
 		F_MESSAGE="Volume name '$VOLNAME' already used. Please pick up a different name (-n) or unmount it"
 		return 1
 	fi
-	
-	# this can be quite huge block to read but I was not able to find a more elegant solution
 
+	if [[ "${FILENAME##*.}"	== "dmg" || "${IMGFORMAT}" == "dmg" ]]; then
+		IMGFORMAT="UDIF"
+	fi
+
+	# this can be quite huge block to read but I was not able to find a more elegant solution
 	if [[ "${COMPRESS}" -eq 1 && "${PROFILE}" ]]; then
 
 		compression_banner
 		
 		s_echo "Creating, copying and compressing the mactomb..."
-		ret=$(${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname "$VOLNAME" \
+		ret=$(${HDIUTIL} create "$FILENAME" -type "$IMGFORMAT" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname "$VOLNAME" \
 			-format $CFORMAT -imagekey zlib-level=$CLEVEL -srcfolder ${PROFILE} 2>&1)
 		if [[ "$ret" =~ "create failed" || "$ret" =~ "create canceled" ]]; then
 			F_MESSAGE+=$ret
@@ -528,7 +532,7 @@ create() {
 		F_MESSAGE="mactomb file '${FILENAME}' successfully created!"
 	elif [[ "${COMPRESS}" -eq 0 && "${PROFILE}" ]]; then
 		s_echo "Creating the mactomb..."
-		ret=$(${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname "$VOLNAME" -attach 2>&1)
+		ret=$(${HDIUTIL} create "$FILENAME" -type "$IMGFORMAT" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname "$VOLNAME" -attach 2>&1)
 		if [[ "$ret" =~ "create failed" || "$ret" =~ "attach failed" || "$ret" =~ "create canceled" ]]; then
 			F_MESSAGE+=$ret
 			return 1
@@ -565,7 +569,7 @@ create() {
 
 		# problem is: if you specify -format UDZO, hdiutil requires -srcfolder to be set.
 		# so we need to create a temp tomb and then compress (hdiutil convert)
-		local tmp="/tmp/$RANDOM$RANDOM.dmg"
+		local tmp="/tmp/$RANDOM$RANDOM"
 
 		# since 'convert' doesn't preserve encryption, let's create a normal container
 		# that will be encrypted by 'convert'
@@ -587,7 +591,7 @@ create() {
 		rm -rf "${tmp}"
 		F_MESSAGE="mactomb file '${FILENAME}' successfully created!"
 	else
-		ret=$(${HDIUTIL} create "$FILENAME" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname "$VOLNAME" 2>&1)
+		ret=$(${HDIUTIL} create "$FILENAME" -type "$IMGFORMAT" -encryption "$ENC" -size "$SIZE" -fs "$FS" -nospotlight -volname "$VOLNAME" 2>&1)
 		if [[ "$ret" =~ "create failed" || "$ret" =~ "create canceled" ]]; then
 			F_MESSAGE+=$ret
 			return 1
@@ -726,11 +730,9 @@ forge() {
 		sed -i '' -e "s@SCRIPT_TO_RUN@$BASHSCRIPT@" "${OUTSCRIPT}/Contents/document.wflow"
 
 		F_MESSAGE="Mactomb forged! Now double click on $automatr to start your app inside the mactomb."
-
-		return 0
 	fi
 
-	return 1
+	return 0
 }
 
 COMMAND=('create', 'app', 'help', 'forge', 'resize', 'list', 'chpass', 'compress', 'decompress', 'rename', 'encrypt')
@@ -739,6 +741,8 @@ HDIUTIL=/usr/bin/hdiutil
 NOTIFICATION=0
 ENC="AES-256"
 FS="HFS+"
+# going default with sparsebundle!
+IMGFORMAT="SPARSEBUNDLE"
 # compression? 
 COMPRESS=0
 # compression format (should be the default)
@@ -759,7 +763,7 @@ VERSION=1.3
 CMD=$1
 shift
 
-while getopts "a:f:s:p:o:b:n:hvc" opt; do
+while getopts "a:f:s:p:o:b:n:t:hvc" opt; do
 	case "${opt}" in
 		f)
 			FILENAME=$OPTARG;;
@@ -777,6 +781,8 @@ while getopts "a:f:s:p:o:b:n:hvc" opt; do
 			BASHSCRIPT=$OPTARG;;
 		o)
 			OUTSCRIPT=$OPTARG;;
+		t)
+			IMGFORMAT=$OPTARG;;
 		v)
 			NOTIFICATION=1;;
 		\?)
