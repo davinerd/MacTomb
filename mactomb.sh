@@ -77,7 +77,14 @@ forge:
   Optional:
     -o <app>\tThe Automator app used to launch the bash <script> by Mac OS X\n
     Example
-    bash $0 forge -f ~/mytomb.dmg -s 100m -a "/Applications/Firefox.app/Contents/MacOS/firefox-bin -p secure_profile" -b ~/run.sh -o ~/runmy.app
+    bash $0 forge -f ~/mytomb.dmg -s 100m -a "/Applications/Firefox.app/Contents/MacOS/firefox-bin -p secure_profile" -b ~/run.sh -o ~/runmy.app\n
+mount:
+  Mount mactomb to file system
+  -f <file>\tEncrypted DMG to use as mactomb file (already created)
+  -m <path>\tMount at <path> instead of inside /Volumes\n
+unmount:
+  Unmount mactomb volume
+  -f <file>\tMactomb file to unmount
 	'''
 	return 2
 }
@@ -610,6 +617,100 @@ create() {
 	return 0
 }
 
+mount() {
+	if [[ ! "${FILENAME}" ]]; then
+		E_MESSAGE="You must specify a filename!"
+		return 1
+	fi
+
+	if [ -d "${FILENAME}" ]; then
+		E_MESSAGE+="File is a directory"
+		return 1
+	fi
+
+	if [ -e "$FILENAME" ]; then
+		local ret
+		if [[ "$MOUNTPOINT" && -d "$MOUNTPOINT" ]]; then
+			ret=$(${HDIUTIL} attach "${FILENAME}" -mountpoint "${MOUNTPOINT}" 2>&1)
+		else
+			ret=$(${HDIUTIL} attach "${FILENAME}" 2>&1)
+		fi
+		
+		if [[ "$ret" =~ "attach failed" ]]; then
+			E_MESSAGE+=$ret
+			return 1
+		fi
+		S_MESSAGE="Mactomb ${FILENAME} was successfully mounted "
+		return 0
+	fi
+	E_MESSAGE="Cannot find file ${FILENAME}"
+	return 1
+}
+
+unmount() {
+	if [[ ! "${FILENAME}" ]]; then
+		E_MESSAGE="You must specify a filename!"
+		return 1
+	fi
+
+	if [ -d "${FILENAME}" ]; then
+		E_MESSAGE+="File is a directory"
+		return 1
+	fi
+
+	local PLISTBUDDY="/usr/libexec/PlistBuddy"
+
+	if [ ! -x "$PLISTBUDDY" ]; then
+		E_MESSAGE="PlistBuddy not found in $PLISTBUDDY. Maybe it's on a different path or not installed?"
+		return 1
+	fi
+
+	local mountpoint mnt ret
+	# Small workaraund to get real mactomb path
+	local real_path=$(cd "$(dirname $FILENAME)"; pwd)/$(basename $FILENAME)
+	local tempfile=$(mktemp /tmp/$RANDOM.XXX)
+	${HDIUTIL} info -plist > $tempfile
+
+	local -i idx=0
+	while True; do
+		imgpath=$(${PLISTBUDDY} -c Print:images:$idx:image-path $tempfile 2>/dev/null)
+		if [ ! "$imgpath" ]; then
+			break
+		fi
+		
+		local -i j=0
+		while True; do
+			mountpoint=$(${PLISTBUDDY} -c Print:images:$idx:system-entities:$j $tempfile 2>/dev/null)
+			if [ ! "$mountpoint" ]; then
+				break
+			fi
+			mountpoint=$(${PLISTBUDDY} -c Print:images:$idx:system-entities:$j:mount-point $tempfile 2>/dev/null)
+			# mount-point is not mandatory inside system-entities
+			if [ "$mountpoint" ]; then
+				# pretty lame...
+				if [[ "$imgpath" -ef "$real_path" ]]; then
+					mnt=$mountpoint
+					break
+				fi
+			fi
+			j+=1
+		done
+		idx+=1
+	done
+
+	if [[ ! "$mnt" ]]; then
+		E_MESSAGE="Can't find mount point for your tomb $FILENAME"
+		return 1
+	fi
+	ret=$(${HDIUTIL} detach "$mnt" 2>&1)
+	if [[ "$ret" =~ "detach failed" ]]; then
+		E_MESSAGE+=$ret
+		return 1
+	fi
+	S_MESSAGE="Mactomb ${FILENAME} was successfully unmounted"
+	return 0
+}
+
 app() {
 	F_MESSAGE="Failed creating the script: "
 	if [[ ! "$APPCMD" || ! "$BASHSCRIPT" || ! "$FILENAME" ]]; then
@@ -744,7 +845,7 @@ forge() {
 	return 0
 }
 
-COMMAND=('create', 'app', 'help', 'forge', 'resize', 'list', 'chpass', 'compress', 'decompress', 'rename', 'encrypt')
+COMMAND=('create', 'app', 'help', 'forge', 'resize', 'list', 'chpass', 'compress', 'decompress', 'rename', 'encrypt', 'mount', 'unmount')
 HDIUTIL=/usr/bin/hdiutil
 # if 1, the script will use the Mac OS X notification method
 NOTIFICATION=0
@@ -768,11 +869,13 @@ OUTSCRIPT=""
 AUTOMATOR="template.app"
 # default volume name for HFS+. Change this if you don't like it
 VOLNAME="untitled"
+# mount point for tombs, if not provided system will mount them to /Volume
+MOUNTPOINT=""
 VERSION=1.3
 CMD=$1
 shift
 
-while getopts "a:f:s:p:o:b:n:t:hvc" opt; do
+while getopts "a:f:s:p:o:b:n:t:m:hvc" opt; do
 	case "${opt}" in
 		f)
 			FILENAME=$OPTARG;;
@@ -792,6 +895,8 @@ while getopts "a:f:s:p:o:b:n:t:hvc" opt; do
 			OUTSCRIPT=$OPTARG;;
 		t)
 			IMGFORMAT=$OPTARG;;
+        m)
+			MOUNTPOINT=$OPTARG;;
 		v)
 			NOTIFICATION=1;;
 		\?)
