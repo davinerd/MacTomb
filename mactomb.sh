@@ -119,7 +119,7 @@ check_size() {
 }
 
 check_file() {
-	local tombfile="$1"
+	local tombfile="${FILENAME}"
 	if [ ! "${tombfile}" ]; then
 		F_MESSAGE="Please specify the filename (-f)"
 		return 1
@@ -130,7 +130,8 @@ check_file() {
 		return 1
 	fi
 
-	if [ -d "${tombfile}" ]; then
+	# this check is not really strong, but I was not able to find another better one
+	if [[ -d "${tombfile}" &&  "${tombfile##*.}" != "sparsebundle" ]]; then
 		F_MESSAGE+="'${tombfile}' is a directory."
 		return 1
 	fi
@@ -349,6 +350,11 @@ resize() {
 		return 1
 	fi
 
+	if [ "${FILENAME##*.}" == "sparsebundle" ]; then
+		F_MESSAGE="Sparsebundle cannot be resized!"
+		return 1
+	fi
+
 	check_size
 	if [ "$?" -eq 1 ]; then
 		F_MESSAGE+="wrong size numer!"
@@ -361,10 +367,7 @@ resize() {
 
 	# risky...but nice!
 	eval $(stat -s "$FILENAME")
-
-	echo $new_size
-	echo $st_size
-
+	
 	if [ $new_size -lt $st_size ]; then
 		param="-shrinkonly"
 	elif [ $new_size -gt $st_size ]; then
