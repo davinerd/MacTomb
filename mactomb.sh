@@ -118,6 +118,26 @@ check_size() {
 	return 1
 }
 
+check_file() {
+	local tombfile="$1"
+	if [ ! "${tombfile}" ]; then
+		F_MESSAGE="Please specify the filename (-f)"
+		return 1
+	fi
+
+	if [ ! -e "${tombfile}" ]; then
+		F_MESSAGE+="'${tombfile}' not found."
+		return 1
+	fi
+
+	if [ -d "${tombfile}" ]; then
+		F_MESSAGE+="'${tombfile}' is a directory."
+		return 1
+	fi
+
+	return 0
+}
+
 list() {
 	local PLISTBUDDY="/usr/libexec/PlistBuddy"
 	# colours! even if I don't need all of them...colours!
@@ -223,18 +243,8 @@ list() {
 chpass() {
 	F_MESSAGE="Cannot change passphrase: "
 
-	if [ ! "${FILENAME}" ]; then
-		F_MESSAGE="Please specify the filename (-f)"
-		return 1
-	fi
-
-	if [ ! -e "${FILENAME}" ]; then
-		F_MESSAGE+="'${FILENAME}' not found."
-		return 1
-	fi
-
-	if [ -d "${FILENAME}" ]; then
-		F_MESSAGE+="'${FILENAME}' is a directory."
+	check_file
+	if [ "$?" -eq 1 ]; then
 		return 1
 	fi
 
@@ -328,18 +338,14 @@ rename() {
 # this function can be used even for not-encrypted DMG
 resize() {
 	F_MESSAGE="Cannot resize '$FILENAME': "
+	
 	if [[ ! "${FILENAME}" || ! "${SIZE}" ]]; then
 		F_MESSAGE="Please specify the filename (-f) and the size (-s)"
 		return 1
 	fi
 
-	if [ ! -e "${FILENAME}" ]; then
-		F_MESSAGE+="file not found."
-		return 1
-	fi
-
-	if [ -d "${FILENAME}" ]; then
-		F_MESSAGE+="is a directory."
+	check_file
+	if [ "$?" -eq 1 ]; then
 		return 1
 	fi
 
@@ -382,18 +388,9 @@ resize() {
 
 compress() {
 	F_MESSAGE="Failed compressing the mactomb file '${FILENAME}': "
-	if [[ ! "${FILENAME}" ]]; then
-		F_MESSAGE="You must specify a filename!"
-		return 1
-	fi
 
-	if [ -d "${FILENAME}" ]; then
-		F_MESSAGE+="file is a directory"
-		return 1
-	fi
-
-	if [ ! -e "${FILENAME}" ]; then
-		F_MESSAGE+="file not found."
+	check_file
+	if [ "$?" -eq 1 ]; then
 		return 1
 	fi
 
@@ -416,18 +413,9 @@ compress() {
 
 decompress() {
 	F_MESSAGE="Failed decompressing the mactomb file '${FILENAME}': "
-	if [[ ! "${FILENAME}" ]]; then
-		F_MESSAGE="You must specify a filename (-f)!"
-		return 1
-	fi
-
-	if [ -d "${FILENAME}" ]; then
-		F_MESSAGE+="file is a directory"
-		return 1
-	fi
-
-	if [ ! -e "${FILENAME}" ]; then
-		F_MESSAGE+="file not found."
+	
+	check_file
+	if [ "$?" -eq 1 ]; then
 		return 1
 	fi
 
@@ -451,18 +439,8 @@ decompress() {
 encrypt() {
 	F_MESSAGE="Failed encrypting the mactomb file '${FILENAME}': "
 
-	if [[ ! "${FILENAME}" ]]; then
-		F_MESSAGE="You must specify a filename (-f)!"
-		return 1
-	fi
-
-	if [ -d "${FILENAME}" ]; then
-		F_MESSAGE+="file is a directory"
-		return 1
-	fi
-
-	if [ ! -e "${FILENAME}" ]; then
-		F_MESSAGE+="file not found."
+	check_file
+	if [ "$?" -eq 1 ]; then
 		return 1
 	fi
 
