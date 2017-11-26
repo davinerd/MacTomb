@@ -767,7 +767,7 @@ OUTSCRIPT=""
 AUTOMATOR="template.app"
 # default volume name for HFS+. Change this if you don't like it
 VOLNAME="untitled"
-VERSION=1.3
+VERSION=1.4
 CMD=$1
 shift
 

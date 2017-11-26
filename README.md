@@ -3,6 +3,13 @@ MacTomb is a kind of [Tomb](https://github.com/dyne/Tomb) porting for Mac OS X. 
 
 Read about MacTomb on [dyne](https://www.dyne.org/software/mactomb/) and [Lost in ICT blog](https://lostinict.wordpress.com/2015/09/27/mactomb-enhance-your-privacy-on-mac-os-x/)
 
+# What's new? (v.1.4)
+- added `encrypt` command: you can now encrypt an unencrypted tomb
+- `rename` command now updates also the bash script (if specified)
+- added the `-t` flag: you can specify two types of image format: SPARSEBUNDLE (default) and DMG
+- nicer output
+- moar checks
+
 # What's new? (v.1.3)
 - added `rename` command: you can now change your volume label within `mactomb` and by specify the flag `-b` also in the bash script (**N.B.** you may need to replace the volume label in other files like, in example, Firefox or Thunderbird profiles)
 - more robust checks to ensure everything works fine
