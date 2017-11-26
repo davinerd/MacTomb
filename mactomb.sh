@@ -106,6 +106,20 @@ decompression_banner() {
 		'''
 }
 
+sparsebundle_banner() {
+	echo '''
+##################################################
+#                  WARNING                       #
+#                                                #
+#  The size specified on the command line is the #
+#  MAXIMUM size the tomb can reach.              #
+#                                                #
+#   Resize DOES NOT work on sparsebundle tomb    # 
+#                                                #
+##################################################
+		'''
+}
+
 check_size() {
 	local dim=${SIZE:~0}
 	local size=${SIZE%?}
@@ -367,7 +381,7 @@ resize() {
 
 	# risky...but nice!
 	eval $(stat -s "$FILENAME")
-	
+
 	if [ $new_size -lt $st_size ]; then
 		param="-shrinkonly"
 	elif [ $new_size -gt $st_size ]; then
@@ -502,8 +516,12 @@ create() {
 		return 1
 	fi
 
-	if [[ "${FILENAME##*.}"	== "dmg" || "${IMGFORMAT}" == "dmg" ]]; then
+	if [[ "${FILENAME##*.}"	== "dmg" || "${IMGFORMAT}" == "DMG" ]]; then
 		IMGFORMAT="UDIF"
+	fi
+
+	if [[ ${IMGFORMAT} == "SPARSEBUNDLE" ]]; then
+		sparsebundle_banner
 	fi
 
 	# this can be quite huge block to read but I was not able to find a more elegant solution
@@ -528,7 +546,7 @@ create() {
 		fi
 		
 		s_echo "mactomb file '${FILENAME}' successfully created!"
-		p_echo "\nCopying profile file(s) into the mactomb..."
+		p_echo "Copying profile file(s) into the mactomb..."
 
 		local abs_vol_path="/Volumes/$VOLNAME"
 		# enforce a check - don't trust hdiutil
@@ -731,7 +749,7 @@ HDIUTIL=/usr/bin/hdiutil
 NOTIFICATION=0
 ENC="AES-256"
 FS="HFS+"
-# going default with sparsebundle!
+# going default with sparsebundle! Use "DMG" for old style tomb
 IMGFORMAT="SPARSEBUNDLE"
 # compression? 
 COMPRESS=0
